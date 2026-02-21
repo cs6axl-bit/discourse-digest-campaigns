@@ -2,7 +2,7 @@
 
 # name: discourse-digest-campaigns
 # about: Admin-defined digest campaigns from a SQL segment + up to 3 random topic sets. Populate once on create; optional scheduled send_at; throttled batched sending; admin UI.
-# version: 1.6.4
+# version: 1.6.5
 # authors: you
 # required_version: 3.0.0
 
@@ -46,16 +46,6 @@ after_initialize do
       sets[SecureRandom.random_number(sets.length)]
     end
   end
-
-  # IMPORTANT (your build needs this):
-  # Load the compiled plugin bundle in the admin UI.
-  #
-  # Do NOT register individual assets/javascripts files (your build rejects that).
-  # Register only the compiled plugin bundle logical path.
-  register_asset "plugins/discourse-digest-campaigns.js", :admin
-
-  require_dependency "email/sender"
-  require_dependency "email/message_builder"
 
   Discourse::Application.routes.append do
     namespace :admin do
