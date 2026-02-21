@@ -42,6 +42,7 @@ module Jobs
         params[:campaign_key] = only_key
       end
 
+      # DB.exec is fine here (we only need rowcount)
       DB.exec(<<~SQL, params)
         UPDATE #{::DigestCampaigns::QUEUE_TABLE}
         SET status = 'queued',
@@ -69,7 +70,10 @@ module Jobs
         params[:campaign_key] = only_key
       end
 
-      DB.exec(<<~SQL, params).to_a.map { |r| r["id"].to_i }
+      # IMPORTANT:
+      # In your Discourse/MiniSql build, DB.exec returns an Integer (rows affected),
+      # so for RETURNING queries we must use DB.query to get rows.
+      DB.query(<<~SQL, params).map { |r| r.id.to_i }
         WITH picked AS (
           SELECT id
           FROM #{::DigestCampaigns::QUEUE_TABLE}
@@ -87,7 +91,7 @@ module Jobs
             updated_at = NOW()
         FROM picked
         WHERE q.id = picked.id
-        RETURNING q.id
+        RETURNING q.id AS id
       SQL
     end
   end
