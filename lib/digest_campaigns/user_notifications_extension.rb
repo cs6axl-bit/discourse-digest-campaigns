@@ -2,21 +2,37 @@
 
 module ::DigestCampaigns
   module UserNotificationsExtension
-    # Builds a "real digest" HTML using core template, but avoids missing text i18n key
-    # by providing our own plain text body.
-    def digest_campaign(user, topic_ids:, campaign_key:, since: nil)
+    # We override UserNotifications#digest to support campaign overrides while keeping normal digest behavior intact.
+    #
+    # Call with:
+    #   UserNotifications.digest(user,
+    #     campaign_topic_ids: [1,2,3],
+    #     campaign_key: "blast_x",
+    #     campaign_since: Time.zone.now
+    #   )
+    #
+    # If campaign_topic_ids is NOT present, we delegate to the original digest method.
+    def digest(user, opts = {})
+      campaign_topic_ids = opts[:campaign_topic_ids]
+      campaign_key = opts[:campaign_key]
+      campaign_since = opts[:campaign_since]
+
+      # Normal digests unaffected
+      if campaign_topic_ids.blank?
+        return digest_without_campaigns(user, opts)
+      end
+
       build_summary_for(user)
 
       @campaign_key = campaign_key.to_s
       @unsubscribe_key = UnsubscribeKey.create_key_for(@user, UnsubscribeKey::DIGEST_TYPE)
-      @since = since.presence || [user.last_seen_at, 1.month.ago].compact.max
+      @since = campaign_since.presence || [user.last_seen_at, 1.month.ago].compact.max
 
-      ids = Array(topic_ids).map(&:to_i).select { |x| x > 0 }.uniq
+      ids = Array(campaign_topic_ids).map(&:to_i).select { |x| x > 0 }.uniq
       topics = Topic.where(id: ids).includes(:category, :user, :first_post).to_a
       by_id = topics.index_by(&:id)
       topics_for_digest = ids.map { |id| by_id[id] }.compact
 
-      # Make sure at least 1 topic appears in the "popular topics" block if any exist
       popular_n = SiteSetting.digest_topics.to_i
       popular_n = 0 if popular_n < 0
       popular_n = 1 if popular_n == 0 && topics_for_digest.present?
@@ -29,10 +45,9 @@ module ::DigestCampaigns
           []
         end
 
-      # Campaign rule: do not add extra "popular posts"
+      # Campaign: don't add extra content
       @popular_posts = []
 
-      # Excerpts used by digest template for topic cards
       @excerpts = {}
       @popular_topics.each do |t|
         next if t&.first_post.blank?
@@ -40,7 +55,6 @@ module ::DigestCampaigns
         @excerpts[t.first_post.id] = email_excerpt(t.first_post.cooked, t.first_post)
       end
 
-      # Minimal counts row
       @counts = [
         {
           id: "new_topics",
@@ -52,30 +66,23 @@ module ::DigestCampaigns
 
       @preheader_text = I18n.t("user_notifications.digest.preheader", since: @since)
 
-      # --------
-      # SUBJECT: force to first topic title (so you never see "Summary" when topics exist)
-      # --------
-      if topics_for_digest.first
-        prefix = @email_prefix.to_s.strip
-        subject = "#{prefix} #{topics_for_digest.first.title}".strip
-      else
-        # fallback to core digest subject (dot key)
-        subject =
-          I18n.t(
-            "user_notifications.digest.subject_template",
-            email_prefix: @email_prefix,
-            date: short_date(Time.now)
-          )
-      end
+      # Subject: keep whatever your existing "subject-first-topic" plugin wants to do,
+      # by staying on the real digest action. We'll set a reasonable base subject here.
+      base_subject =
+        I18n.t(
+          "user_notifications.digest.subject_template",
+          email_prefix: @email_prefix,
+          date: short_date(Time.now)
+        )
 
-      # --------
-      # HTML: render the real digest HTML template (filesystem path uses slash)
-      # --------
+      prefix = SiteSetting.digest_campaigns_subject_prefix.to_s.strip
+      prefix = "[Campaign Digest]" if prefix.blank?
+      subject = "#{prefix} - #{base_subject} - #{@campaign_key}".strip
+
+      # Render the real digest HTML template (this is what your digest HTML plugins target)
       html = render_to_string(template: "user_notifications/digest", formats: [:html])
 
-      # --------
-      # TEXT: custom plain-text body (avoids missing user_notifications.digest.text_body_template)
-      # --------
+      # Plain text body (avoid missing text_body_template on your build)
       lines = []
       lines << "Activity Summary"
       lines << "Campaign: #{@campaign_key}" if @campaign_key.present?
@@ -92,9 +99,6 @@ module ::DigestCampaigns
       lines << "Unsubscribe: #{Discourse.base_url}/email/unsubscribe/#{@unsubscribe_key}"
       text_body = lines.join("\n")
 
-      # IMPORTANT:
-      # - do NOT pass `template:` here (that triggers the missing text_body_template key on your build)
-      # - pass html_override + body explicitly
       build_email(
         user.email,
         subject: subject,
