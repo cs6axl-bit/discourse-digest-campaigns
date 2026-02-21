@@ -8,6 +8,7 @@
 
 enabled_site_setting :digest_campaigns_enabled
 
+# This adds the plugin entry under /admin/plugins (label from client locale: js.digest_campaigns.title)
 add_admin_route "digest_campaigns.title", "digest-campaigns"
 
 after_initialize do
@@ -86,15 +87,17 @@ after_initialize do
   require_dependency "email/sender"
   require_dependency "email/message_builder"
 
+  # IMPORTANT: run campaigns through the REAL digest action so digest plugins trigger.
   require_relative "lib/digest_campaigns/user_notifications_extension"
   ::UserNotifications.class_eval do
     prepend ::DigestCampaigns::UserNotificationsExtension
   end
 
   Discourse::Application.routes.append do
+    # Admin UI entry (supported plugin-admin pattern)
     get "/admin/plugins/digest-campaigns" => "admin/plugins#index", constraints: StaffConstraint.new
-    get "/admin/digest-campaigns" => redirect("/admin/plugins/digest-campaigns"), constraints: StaffConstraint.new
 
+    # JSON API endpoints (explicit .json)
     namespace :admin do
       get    "/digest-campaigns.json" => "digest_campaigns#index"
       post   "/digest-campaigns.json" => "digest_campaigns#create"
@@ -103,6 +106,9 @@ after_initialize do
       post   "/digest-campaigns/:id/test.json" => "digest_campaigns#test_send"
       delete "/digest-campaigns/:id.json" => "digest_campaigns#destroy"
     end
+
+    # NOTE: Redirect route REMOVED to avoid /admin/digest-campaigns.json being redirected.
+    # (Previously: get "/admin/digest-campaigns" => redirect("/admin/plugins/digest-campaigns"))
   end
 
   require_relative "app/models/digest_campaigns/campaign"
