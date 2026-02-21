@@ -73,8 +73,16 @@ module Jobs
         end
 
         begin
-          # action name 'digest' helps align with digest processing hooks
-          DigestCampaignMailer.digest(user, chosen_topic_ids, campaign_key.to_s).deliver_now
+          message =
+            UserNotifications.digest_campaign(
+              user,
+              topic_ids: chosen_topic_ids,
+              campaign_key: campaign_key.to_s,
+              since: campaign.send_at
+            )
+
+          # Use :digest type so your digest-specific plugins & routing logic can match
+          Email::Sender.new(message, :digest).send
           Discourse.redis.incr(rate_key)
 
           DB.exec(<<~SQL, id: id)
