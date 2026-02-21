@@ -2,11 +2,12 @@
 
 module ::DigestCampaigns
   module UserNotificationsExtension
-    # Option A: render the REAL Discourse digest template, but with provided topic_ids.
+    # Option A (HTML): render REAL Discourse digest template, but with provided topic_ids.
+    # Fix (TEXT): provide our own text body so Discourse doesn't look up missing
+    #   user_notifications.digest.text_body_template on your build.
     #
-    # Critical details:
-    # - Use DOT template name: "user_notifications.digest"
-    # - Use DOT i18n keys: "user_notifications.digest.*"
+    # Also: ensure at least 1 topic is in @popular_topics when any topics exist,
+    # so "subject-first-topic" plugins that scan the popular section can find it.
     def digest_campaign(user, topic_ids:, campaign_key:, since: nil)
       build_summary_for(user)
 
@@ -21,6 +22,10 @@ module ::DigestCampaigns
 
       popular_n = SiteSetting.digest_topics.to_i
       popular_n = 0 if popular_n < 0
+
+      # Campaign digests: guarantee at least 1 topic shows up in the popular block
+      # so subject-first-topic plugins can extract it.
+      popular_n = 1 if popular_n == 0 && topics_for_digest.present?
 
       @popular_topics = topics_for_digest[0, popular_n] || []
       @other_new_for_you =
@@ -41,7 +46,6 @@ module ::DigestCampaigns
         @excerpts[t.first_post.id] = email_excerpt(t.first_post.cooked, t.first_post)
       end
 
-      # Minimal counts row; uses DOT label keys
       @counts = [
         {
           id: "new_topics",
@@ -53,7 +57,6 @@ module ::DigestCampaigns
 
       @preheader_text = I18n.t("user_notifications.digest.preheader", since: @since)
 
-      # IMPORTANT: DOT subject key (not slash)
       base_subject =
         I18n.t(
           "user_notifications.digest.subject_template",
@@ -63,15 +66,33 @@ module ::DigestCampaigns
 
       prefix = SiteSetting.digest_campaigns_subject_prefix.to_s.strip
       prefix = "[Campaign Digest]" if prefix.blank?
-
       subject = "#{prefix} - #{base_subject} - #{@campaign_key}".strip
 
-      # IMPORTANT: DOT template name (not "user_notifications/digest")
+      # --------
+      # TEXT BODY (custom): avoid missing i18n key user_notifications.digest.text_body_template
+      # --------
+      lines = []
+      lines << "Activity Summary"
+      lines << "Campaign: #{@campaign_key}" if @campaign_key.present?
+      lines << ""
+      if topics_for_digest.empty?
+        lines << "(No topics)"
+      else
+        lines << "Topics:"
+        topics_for_digest.each_with_index do |t, i|
+          lines << "#{i + 1}. #{t.title} - #{Discourse.base_url}/t/#{t.slug}/#{t.id}"
+        end
+      end
+      lines << ""
+      lines << "Unsubscribe: #{Discourse.base_url}/email/unsubscribe/#{@unsubscribe_key}"
+      text_body = lines.join("\n")
+
       build_email(
         user.email,
-        template: "user_notifications.digest",
+        template: "user_notifications.digest", # HTML stays core digest
         from_alias: I18n.t("user_notifications.digest.from", site_name: Email.site_title),
         subject: subject,
+        body: text_body, # prevents translation lookup for text_body_template
         add_unsubscribe_link: true,
         unsubscribe_url: "#{Discourse.base_url}/email/unsubscribe/#{@unsubscribe_key}",
         topic_ids: topics_for_digest.map(&:id),
