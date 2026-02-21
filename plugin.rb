@@ -1,15 +1,8 @@
-
----
-
-# plugin.rb
-
-**`plugin.rb`**
-```ruby
 # frozen_string_literal: true
 
 # name: discourse-digest-campaigns
 # about: Admin-defined digest campaigns from a SQL segment + up to 3 random topic sets. Populate once on create; optional scheduled send_at; throttled batched sending; admin UI.
-# version: 1.5.0
+# version: 1.6.0
 # authors: you
 # required_version: 3.0.0
 
@@ -29,7 +22,6 @@ after_initialize do
       "digest_campaigns:sent:#{bucket}"
     end
 
-    # Admin-provided SQL: keep it simple. Single SELECT/WITH only.
     def self.validate_campaign_sql!(sql)
       s = sql.to_s.strip
       raise ArgumentError, "campaign SQL is blank" if s.empty?
@@ -56,7 +48,6 @@ after_initialize do
   require_dependency "email/sender"
   require_dependency "email/message_builder"
 
-  # Admin endpoints
   Discourse::Application.routes.append do
     namespace :admin do
       get    "/digest-campaigns" => "digest_campaigns#index"
@@ -68,13 +59,11 @@ after_initialize do
     end
   end
 
-  # Admin UI assets
   register_asset "javascripts/discourse/admin-route-map.js", :admin
   register_asset "javascripts/discourse/routes/admin-digest-campaigns.js", :admin
   register_asset "javascripts/discourse/controllers/admin-digest-campaigns.js", :admin
   register_asset "javascripts/discourse/templates/admin/digest-campaigns.hbs", :admin
 
-  # App code
   require_relative "app/models/digest_campaigns/campaign"
   require_relative "app/jobs/scheduled/digest_campaign_poller"
   require_relative "app/jobs/regular/digest_campaign_send_batch"
