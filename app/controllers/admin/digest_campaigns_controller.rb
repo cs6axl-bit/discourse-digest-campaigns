@@ -105,8 +105,6 @@ module Admin
       raise ArgumentError, "Invalid send_at datetime: #{s}"
     end
 
-    # FIX: no DB.quote (not available on your MiniSqlMultisiteConnection)
-    # Uses bind params for campaign_key + nb instead.
     def populate_queue_for_campaign!(campaign)
       sql = ::DigestCampaigns.validate_campaign_sql!(campaign.selection_sql)
 
@@ -150,11 +148,11 @@ module Admin
       raise "Campaign has no topic sets configured" if chosen.blank?
 
       message =
-        UserNotifications.digest_campaign(
+        UserNotifications.digest(
           user,
-          topic_ids: chosen,
+          campaign_topic_ids: chosen,
           campaign_key: campaign.campaign_key.to_s,
-          since: campaign.send_at
+          campaign_since: campaign.send_at
         )
 
       Email::Sender.new(message, :digest).send
