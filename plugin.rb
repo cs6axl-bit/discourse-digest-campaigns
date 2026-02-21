@@ -2,11 +2,14 @@
 
 # name: discourse-digest-campaigns
 # about: Admin-defined digest campaigns from a SQL segment + up to 3 random topic sets. Populate once on create; optional scheduled send_at; throttled batched sending; admin UI.
-# version: 1.6.1
+# version: 1.6.2
 # authors: you
 # required_version: 3.0.0
 
 enabled_site_setting :digest_campaigns_enabled
+
+# Adds a link in Admin menu and ensures admin-side plugin UI is recognized
+add_admin_route "digest_campaigns.title", "digest-campaigns"
 
 after_initialize do
   module ::DigestCampaigns
