@@ -2,7 +2,7 @@
 
 module Jobs
   class DigestCampaignSendBatch < ::Jobs::Base
-    # Use default queue so it is actually processed on most installs
+    # Use default queue so it is actually processed
     sidekiq_options queue: "default"
 
     def execute(args)
@@ -87,7 +87,7 @@ module Jobs
               since: campaign.send_at
             )
 
-          # Use :digest so your digest-specific plugins and routing logic can match
+          # Use :digest so digest-specific plugins/routing can match
           Email::Sender.new(message, :digest).send
 
           Discourse.redis.incr(rate_key)
@@ -109,7 +109,7 @@ module Jobs
 
     private
 
-    # Handles int[] coming back as Array or sometimes as "{1,2,3}" depending on adapter
+    # Handles int[] coming back as Array or "{1,2,3}" string depending on adapter
     def normalize_int_array(v)
       return [] if v.nil?
 
@@ -118,7 +118,6 @@ module Jobs
       elsif v.is_a?(String)
         s = v.strip
         return [] if s.empty?
-        # "{1,2,3}" -> [1,2,3]
         s = s[1..-2] if s.start_with?("{") && s.end_with?("}")
         s.split(",").map { |x| x.strip.to_i }.select { |n| n > 0 }
       else
