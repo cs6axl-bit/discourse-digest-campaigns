@@ -2,6 +2,7 @@
 
 module Jobs
   class DigestCampaignSendBatch < ::Jobs::Base
+    # Use default queue so it is actually processed on most installs
     sidekiq_options queue: "default"
 
     def execute(args)
@@ -53,7 +54,8 @@ module Jobs
           next
         end
 
-        chosen_topic_ids = Array(chosen_topic_ids).map(&:to_i)
+        chosen_topic_ids = normalize_int_array(chosen_topic_ids)
+
         if chosen_topic_ids.blank?
           picked = ::DigestCampaigns.pick_random_topic_set(campaign.topic_sets)
           if picked.blank?
@@ -61,9 +63,13 @@ module Jobs
             next
           end
 
-          DB.exec(<<~SQL, id: id, arr: picked)
+          # MiniSql in your build does NOT bind Ruby arrays into int[] automatically.
+          # Use a Postgres array literal and cast to int[].
+          arr_literal = "{#{picked.map(&:to_i).join(',')}}"
+
+          DB.exec(<<~SQL, id: id, arr: arr_literal)
             UPDATE #{::DigestCampaigns::QUEUE_TABLE}
-            SET chosen_topic_ids = :arr,
+            SET chosen_topic_ids = :arr::int[],
                 updated_at = NOW()
             WHERE id = :id
               AND status = 'processing'
@@ -81,8 +87,9 @@ module Jobs
               since: campaign.send_at
             )
 
-          # Use :digest type so your digest-specific plugins & routing logic can match
+          # Use :digest so your digest-specific plugins and routing logic can match
           Email::Sender.new(message, :digest).send
+
           Discourse.redis.incr(rate_key)
 
           DB.exec(<<~SQL, id: id)
@@ -101,6 +108,23 @@ module Jobs
     end
 
     private
+
+    # Handles int[] coming back as Array or sometimes as "{1,2,3}" depending on adapter
+    def normalize_int_array(v)
+      return [] if v.nil?
+
+      if v.is_a?(Array)
+        v.map(&:to_i).select { |n| n > 0 }
+      elsif v.is_a?(String)
+        s = v.strip
+        return [] if s.empty?
+        # "{1,2,3}" -> [1,2,3]
+        s = s[1..-2] if s.start_with?("{") && s.end_with?("}")
+        s.split(",").map { |x| x.strip.to_i }.select { |n| n > 0 }
+      else
+        Array(v).map(&:to_i).select { |n| n > 0 }
+      end
+    end
 
     def digest_unsubscribed?(user)
       opt = user.user_option
