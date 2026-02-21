@@ -2,169 +2,121 @@
 
 module Jobs
   class DigestCampaignSendBatch < ::Jobs::Base
-    sidekiq_options queue: "default"
-
     def execute(args)
       return unless SiteSetting.digest_campaigns_enabled
 
-      queue_ids = Array(args[:queue_ids]).map(&:to_i).select { |x| x > 0 }
-      return if queue_ids.empty?
+      campaign_key = args[:campaign_key].to_s
+      ids = Array(args[:queue_ids]).map(&:to_i).select { |x| x > 0 }.uniq
+      return if campaign_key.blank? || ids.blank?
 
-      target_per_min = SiteSetting.digest_campaigns_target_per_minute.to_i
-      target_per_min = 1 if target_per_min <= 0
-
+      # per-minute throttle
       bucket = ::DigestCampaigns.minute_bucket_key
       rate_key = ::DigestCampaigns.redis_rate_key(bucket)
-      Discourse.redis.expire(rate_key, 120)
+      max_per_min = SiteSetting.digest_campaigns_max_per_minute.to_i
+      max_per_min = 300 if max_per_min <= 0
 
-      queue_ids.each_with_index do |qid, idx|
-        sent_this_min = Discourse.redis.get(rate_key).to_i
-        if sent_this_min >= target_per_min
-          remaining = queue_ids[idx..-1]
-          requeue_rows(remaining, "Throttled: hit #{target_per_min}/min")
-          return
-        end
+      sent_this_min = Discourse.redis.get(rate_key).to_i
+      remaining = max_per_min - sent_this_min
+      return if remaining <= 0
 
-        row = DB.query_single(<<~SQL, id: qid)
-          SELECT id, campaign_key, user_id, chosen_topic_ids, status
+      ids = ids.first(remaining)
+
+      rows =
+        DB.query(<<~SQL, ids: ids, key: campaign_key)
+          SELECT id, user_id, chosen_topic_ids
           FROM #{::DigestCampaigns::QUEUE_TABLE}
-          WHERE id = :id
-          LIMIT 1
+          WHERE id IN (:ids)
+            AND campaign_key = :key
+            AND status = 'processing'
+          ORDER BY id ASC
         SQL
-        next if row.blank?
 
-        id, campaign_key, user_id, chosen_topic_ids, status = row
-        next unless status == "processing"
+      return if rows.blank?
 
-        user = User.find_by(id: user_id)
-        if user.nil?
-          mark_failed(id, "User not found (user_id=#{user_id})")
-          next
-        end
+      rows.each do |r|
+        id = r.id.to_i
+        user_id = r.user_id.to_i
+        chosen_topic_ids = r.chosen_topic_ids
 
-        if SiteSetting.digest_campaigns_respect_digest_unsubscribe && digest_unsubscribed?(user)
-          mark_skipped_unsubscribed(id)
-          next
-        end
-
-        campaign = DigestCampaigns::Campaign.find_by(campaign_key: campaign_key.to_s)
-        if campaign.nil?
-          mark_failed(id, "Campaign not found (campaign_key=#{campaign_key})")
-          next
-        end
-
-        chosen_topic_ids = normalize_int_array(chosen_topic_ids)
-
-        if chosen_topic_ids.blank?
-          picked = ::DigestCampaigns.pick_random_topic_set(campaign.topic_sets)
-          if picked.blank?
-            mark_failed(id, "Campaign has no topic sets configured")
+        begin
+          user = User.find_by(id: user_id)
+          if user.blank?
+            DB.exec(<<~SQL, id: id)
+              UPDATE #{::DigestCampaigns::QUEUE_TABLE}
+              SET status='failed', last_error='user_not_found', updated_at=NOW()
+              WHERE id=:id
+            SQL
             next
           end
 
-          arr_literal = "{#{picked.map(&:to_i).join(',')}}"
+          # Optional: skip unsubscribed users
+          if SiteSetting.digest_campaigns_skip_unsubscribed
+            unsub = UnsubscribeKey.unsubscribe_key_exists?(user, UnsubscribeKey::DIGEST_TYPE) rescue false
+            if unsub
+              DB.exec(<<~SQL, id: id)
+                UPDATE #{::DigestCampaigns::QUEUE_TABLE}
+                SET status='skipped_unsubscribed', updated_at=NOW()
+                WHERE id=:id AND status='processing'
+              SQL
+              next
+            end
+          end
 
-          DB.exec(<<~SQL, id: id, arr: arr_literal)
-            UPDATE #{::DigestCampaigns::QUEUE_TABLE}
-            SET chosen_topic_ids = :arr::int[],
-                updated_at = NOW()
-            WHERE id = :id
-              AND status = 'processing'
-          SQL
+          # If not chosen yet, choose once and store (so retries reuse)
+          if chosen_topic_ids.blank?
+            topic_sets =
+              DB.query_single(<<~SQL, key: campaign_key)
+                SELECT topic_sets
+                FROM #{::DigestCampaigns::CAMPAIGNS_TABLE}
+                WHERE key = :key
+                LIMIT 1
+              SQL
 
-          chosen_topic_ids = picked
-        end
+            picked = ::DigestCampaigns.pick_random_topic_set(topic_sets)
+            picked = Array(picked).map(&:to_i).select { |x| x > 0 }.uniq
 
-        begin
-          # IMPORTANT: use REAL digest action so existing digest plugins run
+            arr_literal = "{#{picked.join(',')}}"
+
+            DB.exec(<<~SQL, id: id, arr: arr_literal)
+              UPDATE #{::DigestCampaigns::QUEUE_TABLE}
+              SET chosen_topic_ids = :arr::int[],
+                  updated_at = NOW()
+              WHERE id = :id
+                AND status = 'processing'
+            SQL
+
+            chosen_topic_ids = picked
+          end
+
+          # Build message via UserNotifications.digest so ALL digest plugins can wrap/modify it.
           message =
             UserNotifications.digest(
               user,
-              campaign_topic_ids: chosen_topic_ids,
-              campaign_key: campaign_key.to_s,
-              campaign_since: campaign.send_at
+              campaign_topic_ids: Array(chosen_topic_ids).map(&:to_i),
+              campaign_key: campaign_key,
+              campaign_since: Time.zone.now
             )
 
+          # Now actually send it (after plugins modified message)
           Email::Sender.new(message, :digest).send
-          Discourse.redis.incr(rate_key)
 
           DB.exec(<<~SQL, id: id)
             UPDATE #{::DigestCampaigns::QUEUE_TABLE}
-            SET status = 'sent',
-                sent_at = NOW(),
-                locked_at = NULL,
-                updated_at = NOW(),
-                last_error = NULL
-            WHERE id = :id
+            SET status='sent', sent_at=NOW(), updated_at=NOW(), last_error=NULL
+            WHERE id=:id AND status='processing'
           SQL
+
+          Discourse.redis.incr(rate_key)
+          Discourse.redis.expire(rate_key, 120)
         rescue => e
-          mark_failed(id, "#{e.class}: #{e.message}")
+          DB.exec(<<~SQL, id: id, err: "#{e.class}: #{e.message}".truncate(500))
+            UPDATE #{::DigestCampaigns::QUEUE_TABLE}
+            SET status='failed', last_error=:err, attempts=COALESCE(attempts,0)+1, updated_at=NOW()
+            WHERE id=:id
+          SQL
+          Rails.logger.warn("DigestCampaignSendBatch failed id=#{id} user_id=#{user_id} #{e.class}: #{e.message}")
         end
       end
-    end
-
-    private
-
-    def normalize_int_array(v)
-      return [] if v.nil?
-
-      if v.is_a?(Array)
-        v.map(&:to_i).select { |n| n > 0 }
-      elsif v.is_a?(String)
-        s = v.strip
-        return [] if s.empty?
-        s = s[1..-2] if s.start_with?("{") && s.end_with?("}")
-        s.split(",").map { |x| x.strip.to_i }.select { |n| n > 0 }
-      else
-        Array(v).map(&:to_i).select { |n| n > 0 }
-      end
-    end
-
-    def digest_unsubscribed?(user)
-      opt = user.user_option
-      return false if opt.nil?
-      opt.email_digests == false
-    rescue
-      false
-    end
-
-    def mark_skipped_unsubscribed(id)
-      DB.exec(<<~SQL, id: id)
-        UPDATE #{::DigestCampaigns::QUEUE_TABLE}
-        SET status = 'skipped_unsubscribed',
-            locked_at = NULL,
-            updated_at = NOW(),
-            last_error = NULL
-        WHERE id = :id
-      SQL
-    end
-
-    def requeue_rows(ids, note)
-      return if ids.blank?
-
-      DB.exec(<<~SQL, ids: ids, note: note.to_s)
-        UPDATE #{::DigestCampaigns::QUEUE_TABLE}
-        SET status = 'queued',
-            locked_at = NULL,
-            updated_at = NOW(),
-            last_error = COALESCE(last_error, '') || CASE
-              WHEN COALESCE(last_error, '') = '' THEN :note
-              ELSE E'\n' || :note
-            END
-        WHERE id = ANY(:ids)
-          AND status = 'processing'
-      SQL
-    end
-
-    def mark_failed(id, err)
-      DB.exec(<<~SQL, id: id, err: err.to_s)
-        UPDATE #{::DigestCampaigns::QUEUE_TABLE}
-        SET status = 'failed',
-            locked_at = NULL,
-            updated_at = NOW(),
-            last_error = :err
-        WHERE id = :id
-      SQL
     end
   end
 end
