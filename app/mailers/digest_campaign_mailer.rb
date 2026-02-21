@@ -9,14 +9,16 @@ class DigestCampaignMailer < ActionMailer::Base
     @campaign_key = campaign_key.to_s
     @topic_ids = Array(topic_ids).map(&:to_i)
 
-    # Use the same unsubscribe key type Discourse uses for digests
-    @unsubscribe_key = UnsubscribeKey.create_key_for(@user, UnsubscribeKey::DIGEST_TYPE) :contentReference[oaicite:1]{index=1}
-    @unsubscribe_url = "#{Discourse.base_url}/email/unsubscribe/#{@unsubscribe_key}" :contentReference[oaicite:2]{index=2}
+    # Regular digest unsubscribe key/link
+    @unsubscribe_key = UnsubscribeKey.create_key_for(@user, UnsubscribeKey::DIGEST_TYPE)
+    @unsubscribe_url = "#{Discourse.base_url}/email/unsubscribe/#{@unsubscribe_key}"
 
     # No filtering; just resolve title/slug when possible
     topics = Topic.where(id: @topic_ids).pluck(:id, :title, :slug)
     @topic_map = {}
-    topics.each { |id, title, slug| @topic_map[id.to_i] = { title: title.to_s, slug: slug.to_s } }
+    topics.each do |id, title, slug|
+      @topic_map[id.to_i] = { title: title.to_s, slug: slug.to_s }
+    end
 
     prefix = SiteSetting.digest_campaigns_subject_prefix.to_s.strip
     prefix = "[Campaign Digest]" if prefix.blank?
@@ -27,8 +29,6 @@ class DigestCampaignMailer < ActionMailer::Base
       formats: [:text]
     )
 
-    # IMPORTANT: MessageBuilder will replace %{unsubscribe_instructions} with the “regular”
-    # Discourse unsubscribe footer text (and set List-Unsubscribe headers).
     html_override = render_to_string(
       template: "digest_campaign_mailer/campaign_digest",
       formats: [:html]
