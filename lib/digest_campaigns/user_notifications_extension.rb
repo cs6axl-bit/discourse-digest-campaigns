@@ -2,65 +2,70 @@
 
 module ::DigestCampaigns
   module UserNotificationsExtension
-    # We override UserNotifications#digest to support campaign overrides while keeping normal digest behavior intact.
+    # Called from the class override in plugin.rb:
+    #   ::DigestCampaigns::UserNotificationsExtension.campaign_aware_digest(self, user, opts)
     #
-    # Call with:
-    #   UserNotifications.digest(user,
-    #     campaign_topic_ids: [1,2,3],
-    #     campaign_key: "blast_x",
-    #     campaign_since: Time.zone.now
-    #   )
-    #
-    # If campaign_topic_ids is NOT present, we delegate to the original digest method.
-    def digest(user, opts = {})
+    # IMPORTANT: This MUST RETURN an UNSENT Mail::Message.
+    # Sending happens in the job AFTER all digest plugins have run.
+    def self.campaign_aware_digest(notifier, user, opts = {})
       campaign_topic_ids = opts[:campaign_topic_ids]
       campaign_key = opts[:campaign_key]
       campaign_since = opts[:campaign_since]
 
       # Normal digests unaffected
       if campaign_topic_ids.blank?
-        return super(user, opts)
+        return notifier.digest_without_campaigns(user, opts)
       end
 
-      build_summary_for(user)
+      notifier.build_summary_for(user)
 
-      @campaign_key = campaign_key.to_s
-      @unsubscribe_key = UnsubscribeKey.create_key_for(@user, UnsubscribeKey::DIGEST_TYPE)
-      @since = campaign_since.presence || [user.last_seen_at, 1.month.ago].compact.max
+      notifier.instance_variable_set(:@campaign_key, campaign_key.to_s)
+      notifier.instance_variable_set(:@unsubscribe_key, UnsubscribeKey.create_key_for(notifier.instance_variable_get(:@user), UnsubscribeKey::DIGEST_TYPE))
+
+      since =
+        campaign_since.presence ||
+        [user.last_seen_at, 1.month.ago].compact.max
+
+      notifier.instance_variable_set(:@since, since)
 
       ids = Array(campaign_topic_ids).map(&:to_i).select { |x| x > 0 }.uniq
+
       topics = Topic.where(id: ids).includes(:category, :user, :first_post).to_a
       by_id = topics.index_by(&:id)
       topics_for_digest = ids.map { |id| by_id[id] }.compact
 
       popular_n = SiteSetting.digest_topics.to_i
-      popular_n = 0 if popular_n < 0
-      popular_n = 1 if popular_n == 0 && topics_for_digest.present?
+      popular_n = 10 if popular_n <= 0
 
-      @popular_topics = topics_for_digest[0, popular_n] || []
-      @other_new_for_you =
+      popular_topics = topics_for_digest[0...popular_n] || []
+      other_new_for_you =
         if topics_for_digest.size > popular_n
           topics_for_digest[popular_n..-1] || []
         else
           []
         end
-      # Campaign: 3 random forum posts created 24–72 hours ago
-      @popular_posts = ::DigestCampaigns.fetch_random_popular_posts(3)
 
-      @excerpts = {}
-      @popular_topics.each do |t|
+      notifier.instance_variable_set(:@popular_topics, popular_topics)
+      notifier.instance_variable_set(:@other_new_for_you, other_new_for_you)
+
+      # Per-user random popular posts (24–72h old)
+      popular_posts = ::DigestCampaigns.fetch_random_popular_posts(3)
+      notifier.instance_variable_set(:@popular_posts, popular_posts)
+
+      excerpts = {}
+      popular_topics.each do |t|
         next if t&.first_post.blank?
         next if t.first_post.user_deleted
-        @excerpts[t.first_post.id] = email_excerpt(t.first_post.cooked, t.first_post)
+        excerpts[t.first_post.id] = notifier.email_excerpt(t.first_post.cooked, t.first_post)
       end
-
-      @popular_posts.each do |p|
+      popular_posts.each do |p|
         next if p.blank?
         next if p.user_deleted
-        @excerpts[p.id] = email_excerpt(p.cooked, p)
+        excerpts[p.id] = notifier.email_excerpt(p.cooked, p)
       end
+      notifier.instance_variable_set(:@excerpts, excerpts)
 
-      @counts = [
+      counts = [
         {
           id: "new_topics",
           label_key: "user_notifications.digest.new_topics",
@@ -68,52 +73,45 @@ module ::DigestCampaigns
           href: "#{Discourse.base_url}/new",
         },
       ]
+      notifier.instance_variable_set(:@counts, counts)
 
-      @preheader_text = I18n.t("user_notifications.digest.preheader", since: @since)
+      notifier.instance_variable_set(:@preheader_text, I18n.t("user_notifications.digest.preheader", since: since))
 
-      # Subject: keep whatever your existing "subject-first-topic" plugin wants to do,
-      # by staying on the real digest action. We'll set a reasonable base subject here.
-      base_subject =
-        I18n.t(
-          "user_notifications.digest.subject_template",
-          email_prefix: @email_prefix,
-          date: short_date(Time.now)
+      # Build HTML using the standard digest template so other digest plugins that parse/modify HTML still work
+      html_body =
+        notifier.render_to_string(
+          template: "user_notifications/digest",
+          formats: [:html]
         )
 
-      prefix = SiteSetting.digest_campaigns_subject_prefix.to_s.strip
-      prefix = "[Campaign Digest]" if prefix.blank?
-      subject = "#{prefix} - #{base_subject} - #{@campaign_key}".strip
-
-      # Render the real digest HTML template (this is what your digest HTML plugins target)
-      html = render_to_string(template: "user_notifications/digest", formats: [:html])
-
-      # Plain text body (avoid missing text_body_template on your build)
-      lines = []
-      lines << "Activity Summary"
-      lines << "Campaign: #{@campaign_key}" if @campaign_key.present?
-      lines << ""
-      if topics_for_digest.empty?
-        lines << "(No topics)"
-      else
-        lines << "Topics:"
-        topics_for_digest.each_with_index do |t, i|
-          lines << "#{i + 1}. #{t.title} - #{Discourse.base_url}/t/#{t.slug}/#{t.id}"
-        end
+      # Minimal text part (avoid translation-missing issues)
+      text_lines = []
+      text_lines << "#{SiteSetting.title} Summary"
+      text_lines << ""
+      text_lines << "Topics:"
+      topics_for_digest.each do |t|
+        text_lines << "- #{t.title} (#{Discourse.base_url_no_prefix}#{t.url})"
       end
-      lines << ""
-      lines << "Unsubscribe: #{Discourse.base_url}/email/unsubscribe/#{@unsubscribe_key}"
-      text_body = lines.join("\n")
+      text_body = text_lines.join("\n")
 
-      build_email(
-        user.email,
-        subject: subject,
-        body: text_body,
-        html_override: html,
-        add_unsubscribe_link: true,
-        unsubscribe_url: "#{Discourse.base_url}/email/unsubscribe/#{@unsubscribe_key}",
-        topic_ids: topics_for_digest.map(&:id),
-        post_ids: topics_for_digest.map { |t| t.first_post&.id }.compact
-      )
+      message =
+        Email::MessageBuilder.new(
+          to: user.email,
+          template: "user_notifications/digest",
+          locale: user.effective_locale,
+          subject: Email::MessageBuilder.subject_for(
+            user,
+            "user_notifications.digest.subject_template",
+            site_name: SiteSetting.title
+          )
+        ).build
+
+      message.html_part.body = html_body
+      message.text_part.body = text_body
+
+      # DO NOT SEND HERE.
+      # Return the message so other digest plugins (prepend wrappers) can still modify it.
+      message
     end
   end
 end
