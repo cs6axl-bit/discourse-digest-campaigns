@@ -49,3 +49,9 @@ plugins:
     default: "[Campaign Digest]"
     client: false
     type: string
+
+  # NEW: If true, skip users who disabled digests via the standard digest unsubscribe link.
+  digest_campaigns_respect_digest_unsubscribe:
+    default: true
+    client: false
+    type: bool
