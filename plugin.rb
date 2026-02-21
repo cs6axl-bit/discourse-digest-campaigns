@@ -2,7 +2,7 @@
 
 # name: discourse-digest-campaigns
 # about: Admin-defined digest campaigns from a SQL segment + up to 3 random topic sets. Populate once on create; optional scheduled send_at; throttled batched sending; admin UI.
-# version: 1.8.4
+# version: 1.8.3
 # authors: you
 # required_version: 3.0.0
 
@@ -86,27 +86,23 @@ after_initialize do
   require_dependency "email/sender"
   require_dependency "email/message_builder"
 
-  # Campaign digest override implementation
+  # IMPORTANT: run campaigns through the REAL digest action so digest plugins trigger.
   require_relative "lib/digest_campaigns/user_notifications_extension"
-
-  # IMPORTANT:
-  # Do NOT prepend here (plugin load order would bypass other digest-prepend plugins).
-  # Instead: alias original digest and define digest on the class so other plugins' prepend wrappers
-  # still run and can modify the message before it is sent.
+  require_relative "lib/digest_campaigns/campaign_postprocess"
   ::UserNotifications.class_eval do
     unless method_defined?(:digest_without_campaigns)
       alias_method :digest_without_campaigns, :digest
     end
-
-    def digest(user, opts = {})
-      ::DigestCampaigns::UserNotificationsExtension.campaign_aware_digest(self, user, opts)
-    end
+    include ::DigestCampaigns::UserNotificationsExtension
   end
 
   Discourse::Application.routes.append do
+    # Admin UI entry (supported plugin-admin pattern)
     get "/admin/plugins/digest-campaigns" => "admin/plugins#index", constraints: StaffConstraint.new
+    # Convenience redirect
     get "/admin/digest-campaigns" => redirect("/admin/plugins/digest-campaigns"), constraints: StaffConstraint.new
 
+    # JSON API endpoints (explicit .json)
     namespace :admin do
       get    "/digest-campaigns.json" => "digest_campaigns#index"
       post   "/digest-campaigns.json" => "digest_campaigns#create"
