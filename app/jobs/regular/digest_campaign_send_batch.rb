@@ -2,7 +2,7 @@
 
 module Jobs
   class DigestCampaignSendBatch < ::Jobs::Base
-    sidekiq_options queue: "digest_campaigns"
+    sidekiq_options queue: "default"
 
     def execute(args)
       return unless SiteSetting.digest_campaigns_enabled
