@@ -147,8 +147,15 @@ module Admin
       chosen = ::DigestCampaigns.pick_random_topic_set(campaign.topic_sets)
       raise "Campaign has no topic sets configured" if chosen.blank?
 
-      # uses action name 'digest' to better align with digest-type processors
-      DigestCampaignMailer.digest(user, chosen, campaign.campaign_key.to_s).deliver_now
+      message =
+        UserNotifications.digest_campaign(
+          user,
+          topic_ids: chosen,
+          campaign_key: campaign.campaign_key.to_s,
+          since: campaign.send_at
+        )
+
+      Email::Sender.new(message, :digest).send
 
       { sent_to: test_email, user_id: user.id, chosen_topic_ids: chosen, campaign_key: campaign.campaign_key }
     end
