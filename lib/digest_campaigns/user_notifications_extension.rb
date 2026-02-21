@@ -19,7 +19,7 @@ module ::DigestCampaigns
   #
   # PLUS: campaign-only subject + preheader:
   #   - subject = first topic title (smart-trimmed to 200 with …)
-  #   - preheader = first 150 chars of first topic body (smart-trimmed with …)
+  #   - preheader = first 200 chars of first topic body (smart-trimmed with …)
   #
   # PLUS: remove "Since your last visit" / counts for campaigns:
   #   - @since = nil
@@ -975,7 +975,7 @@ module ::DigestCampaigns
 
         preview = ::DigestCampaigns::UserNotificationsExtension.plain_text_from_post(first_post)
         preview = ::DigestCampaigns::DigestAppendData.normalize_spaces(preview)
-        preview = ::DigestCampaigns::UserNotificationsExtension.smart_trim_preview(preview, 150)
+        preview = ::DigestCampaigns::UserNotificationsExtension.smart_trim_preview(preview, 200)
         @preheader_text = preview
       else
         base_subject =
