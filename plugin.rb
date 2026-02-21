@@ -81,7 +81,6 @@ after_initialize do
         .limit(lim)
         .to_a
     end
-
   end
 
   require_dependency "email/sender"
@@ -91,8 +90,6 @@ after_initialize do
   require_relative "lib/digest_campaigns/user_notifications_extension"
   ::UserNotifications.class_eval do
     prepend ::DigestCampaigns::UserNotificationsExtension
-  end
-    include ::DigestCampaigns::UserNotificationsExtension
   end
 
   Discourse::Application.routes.append do
