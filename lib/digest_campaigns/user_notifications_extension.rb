@@ -2,12 +2,8 @@
 
 module ::DigestCampaigns
   module UserNotificationsExtension
-    # Option A (HTML): render REAL Discourse digest template, but with provided topic_ids.
-    # Fix (TEXT): provide our own text body so Discourse doesn't look up missing
-    #   user_notifications.digest.text_body_template on your build.
-    #
-    # Also: ensure at least 1 topic is in @popular_topics when any topics exist,
-    # so "subject-first-topic" plugins that scan the popular section can find it.
+    # Builds a "real digest" HTML using core template, but avoids missing text i18n key
+    # by providing our own plain text body.
     def digest_campaign(user, topic_ids:, campaign_key:, since: nil)
       build_summary_for(user)
 
@@ -20,11 +16,9 @@ module ::DigestCampaigns
       by_id = topics.index_by(&:id)
       topics_for_digest = ids.map { |id| by_id[id] }.compact
 
+      # Make sure at least 1 topic appears in the "popular topics" block if any exist
       popular_n = SiteSetting.digest_topics.to_i
       popular_n = 0 if popular_n < 0
-
-      # Campaign digests: guarantee at least 1 topic shows up in the popular block
-      # so subject-first-topic plugins can extract it.
       popular_n = 1 if popular_n == 0 && topics_for_digest.present?
 
       @popular_topics = topics_for_digest[0, popular_n] || []
@@ -35,10 +29,10 @@ module ::DigestCampaigns
           []
         end
 
-      # Campaigns: do not add extra content
+      # Campaign rule: do not add extra "popular posts"
       @popular_posts = []
 
-      # Excerpts for topic cards (used by digest template)
+      # Excerpts used by digest template for topic cards
       @excerpts = {}
       @popular_topics.each do |t|
         next if t&.first_post.blank?
@@ -46,6 +40,7 @@ module ::DigestCampaigns
         @excerpts[t.first_post.id] = email_excerpt(t.first_post.cooked, t.first_post)
       end
 
+      # Minimal counts row
       @counts = [
         {
           id: "new_topics",
@@ -57,19 +52,29 @@ module ::DigestCampaigns
 
       @preheader_text = I18n.t("user_notifications.digest.preheader", since: @since)
 
-      base_subject =
-        I18n.t(
-          "user_notifications.digest.subject_template",
-          email_prefix: @email_prefix,
-          date: short_date(Time.now)
-        )
-
-      prefix = SiteSetting.digest_campaigns_subject_prefix.to_s.strip
-      prefix = "[Campaign Digest]" if prefix.blank?
-      subject = "#{prefix} - #{base_subject} - #{@campaign_key}".strip
+      # --------
+      # SUBJECT: force to first topic title (so you never see "Summary" when topics exist)
+      # --------
+      if topics_for_digest.first
+        prefix = @email_prefix.to_s.strip
+        subject = "#{prefix} #{topics_for_digest.first.title}".strip
+      else
+        # fallback to core digest subject (dot key)
+        subject =
+          I18n.t(
+            "user_notifications.digest.subject_template",
+            email_prefix: @email_prefix,
+            date: short_date(Time.now)
+          )
+      end
 
       # --------
-      # TEXT BODY (custom): avoid missing i18n key user_notifications.digest.text_body_template
+      # HTML: render the real digest HTML template (filesystem path uses slash)
+      # --------
+      html = render_to_string(template: "user_notifications/digest", formats: [:html])
+
+      # --------
+      # TEXT: custom plain-text body (avoids missing user_notifications.digest.text_body_template)
       # --------
       lines = []
       lines << "Activity Summary"
@@ -87,12 +92,14 @@ module ::DigestCampaigns
       lines << "Unsubscribe: #{Discourse.base_url}/email/unsubscribe/#{@unsubscribe_key}"
       text_body = lines.join("\n")
 
+      # IMPORTANT:
+      # - do NOT pass `template:` here (that triggers the missing text_body_template key on your build)
+      # - pass html_override + body explicitly
       build_email(
         user.email,
-        template: "user_notifications.digest", # HTML stays core digest
-        from_alias: I18n.t("user_notifications.digest.from", site_name: Email.site_title),
         subject: subject,
-        body: text_body, # prevents translation lookup for text_body_template
+        body: text_body,
+        html_override: html,
         add_unsubscribe_link: true,
         unsubscribe_url: "#{Discourse.base_url}/email/unsubscribe/#{@unsubscribe_key}",
         topic_ids: topics_for_digest.map(&:id),
