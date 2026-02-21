@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class DigestCampaignMailer < ActionMailer::Base
+  include Email::BuildEmailHelper
   layout "email"
 
   def campaign_digest(user, topic_ids, campaign_key)
@@ -8,29 +9,40 @@ class DigestCampaignMailer < ActionMailer::Base
     @campaign_key = campaign_key.to_s
     @topic_ids = Array(topic_ids).map(&:to_i)
 
+    # Use the same unsubscribe key type Discourse uses for digests
+    @unsubscribe_key = UnsubscribeKey.create_key_for(@user, UnsubscribeKey::DIGEST_TYPE) :contentReference[oaicite:1]{index=1}
+    @unsubscribe_url = "#{Discourse.base_url}/email/unsubscribe/#{@unsubscribe_key}" :contentReference[oaicite:2]{index=2}
+
     # No filtering; just resolve title/slug when possible
     topics = Topic.where(id: @topic_ids).pluck(:id, :title, :slug)
     @topic_map = {}
-    topics.each do |id, title, slug|
-      @topic_map[id.to_i] = { title: title.to_s, slug: slug.to_s }
-    end
+    topics.each { |id, title, slug| @topic_map[id.to_i] = { title: title.to_s, slug: slug.to_s } }
 
     prefix = SiteSetting.digest_campaigns_subject_prefix.to_s.strip
     prefix = "[Campaign Digest]" if prefix.blank?
     subject = "#{prefix} #{@campaign_key}".strip
 
-    message = Email::MessageBuilder.new(to: @user.email, subject: subject).build
+    text_body = render_to_string(
+      template: "digest_campaign_mailer/campaign_digest",
+      formats: [:text]
+    )
 
-    message.html_part = Mail::Part.new do
-      content_type "text/html; charset=UTF-8"
-      body render_to_string(template: "digest_campaign_mailer/campaign_digest", formats: [:html])
-    end
+    # IMPORTANT: MessageBuilder will replace %{unsubscribe_instructions} with the “regular”
+    # Discourse unsubscribe footer text (and set List-Unsubscribe headers).
+    html_override = render_to_string(
+      template: "digest_campaign_mailer/campaign_digest",
+      formats: [:html]
+    )
 
-    message.text_part = Mail::Part.new do
-      body render_to_string(template: "digest_campaign_mailer/campaign_digest", formats: [:text])
-    end
-
-    Email::Sender.new(message, :campaign_digest).send
+    build_email(
+      @user.email,
+      subject: subject,
+      body: text_body,
+      html_override: html_override,
+      add_unsubscribe_link: true,
+      unsubscribe_url: @unsubscribe_url,
+      include_respond_instructions: false
+    )
   end
 
   private
