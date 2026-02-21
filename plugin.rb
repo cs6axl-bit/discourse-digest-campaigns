@@ -2,7 +2,7 @@
 
 # name: discourse-digest-campaigns
 # about: Admin-defined digest campaigns from a SQL segment + up to 3 random topic sets. Populate once on create; optional scheduled send_at; throttled batched sending; admin UI.
-# version: 1.6.0
+# version: 1.6.1
 # authors: you
 # required_version: 3.0.0
 
@@ -58,11 +58,6 @@ after_initialize do
       delete "/digest-campaigns/:id" => "digest_campaigns#destroy"
     end
   end
-
-  register_asset "javascripts/discourse/admin-route-map.js", :admin
-  register_asset "javascripts/discourse/routes/admin-digest-campaigns.js", :admin
-  register_asset "javascripts/discourse/controllers/admin-digest-campaigns.js", :admin
-  register_asset "javascripts/discourse/templates/admin/digest-campaigns.hbs", :admin
 
   require_relative "app/models/digest_campaigns/campaign"
   require_relative "app/jobs/scheduled/digest_campaign_poller"
