@@ -2,11 +2,10 @@
 
 module ::DigestCampaigns
   module UserNotificationsExtension
-    # Called from the class override in plugin.rb:
+    # Called from plugin.rb (class override):
     #   ::DigestCampaigns::UserNotificationsExtension.campaign_aware_digest(self, user, opts)
     #
-    # IMPORTANT: This MUST RETURN an UNSENT Mail::Message.
-    # Sending happens in the job AFTER all digest plugins have run.
+    # IMPORTANT: Must RETURN an UNSENT Mail::Message.
     def self.campaign_aware_digest(notifier, user, opts = {})
       campaign_topic_ids = opts[:campaign_topic_ids]
       campaign_key = opts[:campaign_key]
@@ -20,7 +19,10 @@ module ::DigestCampaigns
       notifier.build_summary_for(user)
 
       notifier.instance_variable_set(:@campaign_key, campaign_key.to_s)
-      notifier.instance_variable_set(:@unsubscribe_key, UnsubscribeKey.create_key_for(notifier.instance_variable_get(:@user), UnsubscribeKey::DIGEST_TYPE))
+      notifier.instance_variable_set(
+        :@unsubscribe_key,
+        UnsubscribeKey.create_key_for(notifier.instance_variable_get(:@user), UnsubscribeKey::DIGEST_TYPE)
+      )
 
       since =
         campaign_since.presence ||
@@ -77,7 +79,6 @@ module ::DigestCampaigns
 
       notifier.instance_variable_set(:@preheader_text, I18n.t("user_notifications.digest.preheader", since: since))
 
-      # Build HTML using the standard digest template so other digest plugins that parse/modify HTML still work
       html_body =
         notifier.render_to_string(
           template: "user_notifications/digest",
@@ -94,23 +95,28 @@ module ::DigestCampaigns
       end
       text_body = text_lines.join("\n")
 
+      # IMPORTANT SUBJECT FIX:
+      # Use the STANDARD digest subject template only.
+      # Do NOT add "[Campaign Digest]" or campaign_key here, so your "first topic title subject" plugin can rewrite cleanly.
+      subject =
+        Email::MessageBuilder.subject_for(
+          user,
+          "user_notifications.digest.subject_template",
+          site_name: SiteSetting.title
+        )
+
       message =
         Email::MessageBuilder.new(
           to: user.email,
           template: "user_notifications/digest",
           locale: user.effective_locale,
-          subject: Email::MessageBuilder.subject_for(
-            user,
-            "user_notifications.digest.subject_template",
-            site_name: SiteSetting.title
-          )
+          subject: subject
         ).build
 
       message.html_part.body = html_body
       message.text_part.body = text_body
 
       # DO NOT SEND HERE.
-      # Return the message so other digest plugins (prepend wrappers) can still modify it.
       message
     end
   end
