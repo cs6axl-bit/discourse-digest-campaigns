@@ -42,6 +42,11 @@ module Jobs
           next
         end
 
+        if SiteSetting.digest_campaigns_respect_digest_unsubscribe && digest_unsubscribed?(user)
+          mark_skipped_unsubscribed(id)
+          next
+        end
+
         campaign = DigestCampaigns::Campaign.find_by(campaign_key: campaign_key.to_s)
         if campaign.nil?
           mark_failed(id, "Campaign not found (campaign_key=#{campaign_key})")
@@ -87,6 +92,25 @@ module Jobs
     end
 
     private
+
+    def digest_unsubscribed?(user)
+      opt = user.user_option
+      return false if opt.nil?
+      opt.email_digests == false
+    rescue
+      false
+    end
+
+    def mark_skipped_unsubscribed(id)
+      DB.exec(<<~SQL, id: id)
+        UPDATE #{::DigestCampaigns::QUEUE_TABLE}
+        SET status = 'skipped_unsubscribed',
+            locked_at = NULL,
+            updated_at = NOW(),
+            last_error = NULL
+        WHERE id = :id
+      SQL
+    end
 
     def requeue_rows(ids, note)
       return if ids.blank?
