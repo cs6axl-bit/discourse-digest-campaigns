@@ -10,7 +10,8 @@ module Admin
           queued_count: queue_count(c.campaign_key, "queued"),
           processing_count: queue_count(c.campaign_key, "processing"),
           sent_count: queue_count(c.campaign_key, "sent"),
-          failed_count: queue_count(c.campaign_key, "failed")
+          failed_count: queue_count(c.campaign_key, "failed"),
+          skipped_unsubscribed_count: queue_count(c.campaign_key, "skipped_unsubscribed")
         )
       end
       render_json_dump(campaigns: rows)
@@ -107,8 +108,6 @@ module Admin
     def populate_queue_for_campaign!(campaign)
       sql = ::DigestCampaigns.validate_campaign_sql!(campaign.selection_sql)
 
-      # selection_sql must return user_id only
-      # store campaign.send_at into not_before (nullable)
       DB.exec(<<~SQL, nb: campaign.send_at)
         INSERT INTO #{::DigestCampaigns::QUEUE_TABLE}
           (campaign_key, user_id, chosen_topic_ids, not_before, status, created_at, updated_at)
