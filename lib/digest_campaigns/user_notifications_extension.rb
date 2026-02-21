@@ -2,22 +2,11 @@
 
 module ::DigestCampaigns
   module UserNotificationsExtension
-    # We override UserNotifications#digest to support campaign overrides while keeping normal digest behavior intact.
-    #
-    # Call with:
-    #   UserNotifications.digest(user,
-    #     campaign_topic_ids: [1,2,3],
-    #     campaign_key: "blast_x",
-    #     campaign_since: Time.zone.now
-    #   )
-    #
-    # If campaign_topic_ids is NOT present, we delegate to the original digest method.
     def digest(user, opts = {})
       campaign_topic_ids = opts[:campaign_topic_ids]
       campaign_key = opts[:campaign_key]
       campaign_since = opts[:campaign_since]
 
-      # Normal digests unaffected
       if campaign_topic_ids.blank?
         return digest_without_campaigns(user, opts)
       end
@@ -33,13 +22,12 @@ module ::DigestCampaigns
       by_id = topics.index_by(&:id)
       topics_for_digest = ids.map { |id| by_id[id] }.compact
 
-      # Keep the digest layout: split chosen topics into popular + other
       popular_n = SiteSetting.digest_topics.to_i
       popular_n = 10 if popular_n <= 0
       @popular_topics = topics_for_digest[0...popular_n] || []
       @other_new_for_you = topics_for_digest.size > popular_n ? (topics_for_digest[popular_n..-1] || []) : []
 
-      # Campaign: pick 3 random forum posts created 24–72 hours ago
+      # Campaign: 3 random forum posts created 24–72 hours ago
       @popular_posts = ::DigestCampaigns.fetch_random_popular_posts(3)
 
       # excerpts for template
@@ -64,23 +52,42 @@ module ::DigestCampaigns
         },
       ]
 
-      @preheader_text = I18n.t("user_notifications.digest.preheader", since: @since)
+      # =========================
+      # SUBJECT + PREHEADER OVERRIDES
+      # =========================
+      first_topic = topics_for_digest.first
+      first_post = first_topic&.first_post
 
-      # Standard digest subject base (we keep your campaign prefix + campaign_key behavior)
+      # Subject = first topic title (fallback to old campaign subject if no topics)
       base_subject = I18n.t(
         "user_notifications.digest.subject_template",
         site_name: SiteSetting.title,
         date: short_date(Time.now)
       )
-
       prefix = SiteSetting.digest_campaigns_subject_prefix.to_s.strip
       prefix = "[Campaign Digest]" if prefix.blank?
-      subject = "#{prefix} - #{base_subject} - #{@campaign_key}".strip
+      fallback_subject = "#{prefix} - #{base_subject} - #{@campaign_key}".strip
 
-      # Render the real digest HTML template (this is what your digest HTML plugins target)
+      subject = first_topic&.title.to_s.strip
+      subject = fallback_subject if subject.blank?
+
+      # Preheader/subheader = first 100 chars of first topic body (plain text)
+      preheader = ""
+      if first_post.present? && first_post.cooked.present?
+        begin
+          plain = PrettyText.excerpt(first_post.cooked, 300, strip_links: true, keep_emoji_images: false).to_s
+          plain = plain.gsub(/\s+/, " ").strip
+          preheader = plain[0, 100].to_s.strip
+        rescue
+          preheader = ""
+        end
+      end
+      @preheader_text = preheader.present? ? preheader : I18n.t("user_notifications.digest.preheader", since: @since)
+
+      # Render digest HTML
       html = render_to_string(template: "user_notifications/digest", formats: [:html])
 
-      # Plain text body (avoid missing text_body_template on your build)
+      # Plain text body
       lines = []
       lines << "Activity Summary"
       lines << "Campaign: #{@campaign_key}" if @campaign_key.present?
