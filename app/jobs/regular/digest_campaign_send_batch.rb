@@ -62,6 +62,7 @@ module Jobs
             next
           end
 
+          # MiniSql in your build does NOT bind Ruby arrays into int[] automatically.
           arr_literal = "{#{picked.map(&:to_i).join(',')}}"
 
           DB.exec(<<~SQL, id: id, arr: arr_literal)
@@ -76,7 +77,6 @@ module Jobs
         end
 
         begin
-          # IMPORTANT: use REAL digest action so existing digest plugins run
           message =
             UserNotifications.digest(
               user,
@@ -85,7 +85,20 @@ module Jobs
               campaign_since: campaign.send_at
             )
 
-          Email::Sender.new(message, :digest).send
+          if message.nil?
+            mark_failed(id, "UserNotifications.digest returned nil (email suppressed before build?)")
+            next
+          end
+
+          sender = Email::Sender.new(message, :digest)
+          sender.send
+
+          # IMPORTANT: Email::Sender can skip silently. Detect it.
+          if sender_looks_skipped?(sender)
+            mark_failed(id, "Email::Sender skipped: #{sender_skip_reason(sender)}")
+            next
+          end
+
           Discourse.redis.incr(rate_key)
 
           DB.exec(<<~SQL, id: id)
@@ -105,6 +118,7 @@ module Jobs
 
     private
 
+    # Handles int[] coming back as Array or "{1,2,3}" string depending on adapter
     def normalize_int_array(v)
       return [] if v.nil?
 
@@ -126,6 +140,23 @@ module Jobs
       opt.email_digests == false
     rescue
       false
+    end
+
+    # Different Discourse versions expose different skip APIs; handle them all.
+    def sender_looks_skipped?(sender)
+      return sender.skipped? if sender.respond_to?(:skipped?)
+      return sender.skipped if sender.respond_to?(:skipped)
+      return sender.instance_variable_get(:@skipped) if sender.instance_variable_defined?(:@skipped)
+      false
+    end
+
+    def sender_skip_reason(sender)
+      return sender.skipped_reason if sender.respond_to?(:skipped_reason)
+      return sender.reason if sender.respond_to?(:reason)
+      if sender.instance_variable_defined?(:@skipped_reason)
+        return sender.instance_variable_get(:@skipped_reason).to_s
+      end
+      "unknown"
     end
 
     def mark_skipped_unsubscribed(id)
