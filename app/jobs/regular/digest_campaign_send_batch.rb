@@ -76,12 +76,12 @@ module Jobs
         end
 
         begin
-          # IMPORTANT: use REAL digest action so existing digest plugins run
           message =
             UserNotifications.digest(
               user,
               campaign_topic_ids: chosen_topic_ids,
               campaign_key: campaign_key.to_s,
+              campaign_id: campaign.id,          # ✅ NEW: used for email_id generation
               campaign_since: campaign.send_at
             )
 
