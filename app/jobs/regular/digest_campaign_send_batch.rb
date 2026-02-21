@@ -2,7 +2,6 @@
 
 module Jobs
   class DigestCampaignSendBatch < ::Jobs::Base
-    # Use default queue so it is actually processed
     sidekiq_options queue: "default"
 
     def execute(args)
@@ -63,8 +62,6 @@ module Jobs
             next
           end
 
-          # MiniSql in your build does NOT bind Ruby arrays into int[] automatically.
-          # Use a Postgres array literal and cast to int[].
           arr_literal = "{#{picked.map(&:to_i).join(',')}}"
 
           DB.exec(<<~SQL, id: id, arr: arr_literal)
@@ -79,17 +76,16 @@ module Jobs
         end
 
         begin
+          # IMPORTANT: use REAL digest action so existing digest plugins run
           message =
-            UserNotifications.digest_campaign(
+            UserNotifications.digest(
               user,
-              topic_ids: chosen_topic_ids,
+              campaign_topic_ids: chosen_topic_ids,
               campaign_key: campaign_key.to_s,
-              since: campaign.send_at
+              campaign_since: campaign.send_at
             )
 
-          # Use :digest so digest-specific plugins/routing can match
           Email::Sender.new(message, :digest).send
-
           Discourse.redis.incr(rate_key)
 
           DB.exec(<<~SQL, id: id)
@@ -109,7 +105,6 @@ module Jobs
 
     private
 
-    # Handles int[] coming back as Array or "{1,2,3}" string depending on adapter
     def normalize_int_array(v)
       return [] if v.nil?
 
