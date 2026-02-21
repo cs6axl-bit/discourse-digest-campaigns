@@ -1,21 +1,13 @@
-
----
-
-# plugin.rb
-
-**`plugin.rb`**
-```ruby
 # frozen_string_literal: true
 
 # name: discourse-digest-campaigns
 # about: Admin-defined digest campaigns from a SQL segment + up to 3 random topic sets. Populate once on create; optional scheduled send_at; throttled batched sending; admin UI.
-# version: 1.7.0
+# version: 1.7.1
 # authors: you
 # required_version: 3.0.0
 
 enabled_site_setting :digest_campaigns_enabled
 
-# This adds the plugin entry under /admin/plugins (label from client locale: js.digest_campaigns.title)
 add_admin_route "digest_campaigns.title", "digest-campaigns"
 
 after_initialize do
@@ -61,15 +53,16 @@ after_initialize do
   require_dependency "email/sender"
   require_dependency "email/message_builder"
 
+  # Option A: extend core digest mailer to render the real digest template with our topics
+  require_relative "lib/digest_campaigns/user_notifications_extension"
+  ::UserNotifications.class_eval do
+    include ::DigestCampaigns::UserNotificationsExtension
+  end
+
   Discourse::Application.routes.append do
-    # Supported plugin admin UI entry (Ember route registered via *-route-map.js)
     get "/admin/plugins/digest-campaigns" => "admin/plugins#index", constraints: StaffConstraint.new
+    get "/admin/digest-campaigns" => redirect("/admin/plugins/digest-campaigns"), constraints: StaffConstraint.new
 
-    # Convenience redirect (HTML UI only)
-    get "/admin/digest-campaigns" => redirect("/admin/plugins/digest-campaigns"),
-        constraints: StaffConstraint.new
-
-    # JSON API endpoints (explicit .json to avoid conflicts with the redirect)
     namespace :admin do
       get    "/digest-campaigns.json" => "digest_campaigns#index"
       post   "/digest-campaigns.json" => "digest_campaigns#create"
@@ -83,6 +76,5 @@ after_initialize do
   require_relative "app/models/digest_campaigns/campaign"
   require_relative "app/jobs/scheduled/digest_campaign_poller"
   require_relative "app/jobs/regular/digest_campaign_send_batch"
-  require_relative "app/mailers/digest_campaign_mailer"
   require_relative "app/controllers/admin/digest_campaigns_controller"
 end
