@@ -105,14 +105,16 @@ module Admin
       raise ArgumentError, "Invalid send_at datetime: #{s}"
     end
 
+    # FIX: no DB.quote (not available on your MiniSqlMultisiteConnection)
+    # Uses bind params for campaign_key + nb instead.
     def populate_queue_for_campaign!(campaign)
       sql = ::DigestCampaigns.validate_campaign_sql!(campaign.selection_sql)
 
-      DB.exec(<<~SQL, nb: campaign.send_at)
+      DB.exec(<<~SQL, campaign_key: campaign.campaign_key.to_s, nb: campaign.send_at)
         INSERT INTO #{::DigestCampaigns::QUEUE_TABLE}
           (campaign_key, user_id, chosen_topic_ids, not_before, status, created_at, updated_at)
         SELECT
-          #{DB.quote(campaign.campaign_key.to_s)} AS campaign_key,
+          :campaign_key AS campaign_key,
           src.user_id::int AS user_id,
           '{}'::int[] AS chosen_topic_ids,
           :nb AS not_before,
