@@ -11,10 +11,6 @@ rescue LoadError
 end
 
 module ::DigestCampaigns
-  # ============================================================
-  # Campaign-only port of: digest-append3-links-and-trim-excerpt v1.7.9
-  # PLUS: new SiteSetting-based "ignore first N topics" trim rule.
-  # ============================================================
   module DigestAppendData
     ENABLE_LINK_REWRITE = true
 
@@ -461,7 +457,6 @@ module ::DigestCampaigns
       end
 
       if break_trimmed && !trimming_started
-        # add ellipsis somewhere visible
         begin
           tn2 = node.xpath(".//text()[not(ancestor::script) and not(ancestor::style)]")
                     .to_a
@@ -480,9 +475,6 @@ module ::DigestCampaigns
       false
     end
 
-    # ============================================================
-    # NEW: compute protected (untrimmed) topic IDs for first N topics
-    # ============================================================
     def self.protected_topic_ids_for_first_n(doc, ignore_n, base)
       ignore_n = ignore_n.to_i
       return {} if ignore_n <= 0
@@ -529,9 +521,7 @@ module ::DigestCampaigns
 
       base = Discourse.base_url
 
-      if !Nokogiri
-        return
-      end
+      return unless Nokogiri
 
       dayofweek_val = encoded_email(user)
       doc = Nokogiri::HTML(body)
@@ -541,7 +531,6 @@ module ::DigestCampaigns
       skip_trim_all = (primary_topic_count == 1)
       do_trim = primary_topic_count.nil? ? true : (primary_topic_count > 1)
 
-      # --- Internal link tracking append
       if ENABLE_LINK_REWRITE
         doc.css("a[href]").each do |a|
           href = a["href"].to_s.strip
@@ -590,7 +579,6 @@ module ::DigestCampaigns
         end
       end
 
-      # --- /content rewrite inside excerpt bodies
       if ENABLE_CONTENT_REDIRECTOR_FOR_POST_BODY_LINKS
         excerpt_nodes =
           HTML_EXCERPT_SELECTORS
@@ -610,7 +598,6 @@ module ::DigestCampaigns
             next if abs0.nil?
             next unless http_url?(abs0)
 
-            # skip if it's already /content
             begin
               u0 = URI.parse(abs0)
               b0 = URI.parse(base)
@@ -636,7 +623,6 @@ module ::DigestCampaigns
         end
       end
 
-      # --- HTML excerpt trimming (campaign setting + ignore first N topics)
       trim_enabled = (SiteSetting.digest_campaigns_trim_excerpts_enabled && ENABLE_TRIM_HTML_PART)
 
       if trim_enabled && !skip_trim_all && do_trim
@@ -649,7 +635,6 @@ module ::DigestCampaigns
             .uniq
 
         nodes.each do |node|
-          # NEW: skip trimming for first N topics (by topic context)
           ctx = topic_id_context_for_excerpt(node, base).to_s
           next if protected[ctx]
 
@@ -672,9 +657,6 @@ module ::DigestCampaigns
       nil
     end
 
-    # ============================================================
-    # TEXT trimming (campaign setting + ignore first N topics)
-    # ============================================================
     def self.count_topics_in_text_blocks(blocks)
       cutoff = blocks.find_index do |b|
         t = normalize_spaces(b).downcase
@@ -755,7 +737,6 @@ module ::DigestCampaigns
         prev_has_topic_url = !!(prev =~ TEXT_TOPIC_URL_REGEX)
         next unless prev_has_topic_url
 
-        # NEW: if this excerpt belongs to a protected (first N) topic, skip trimming
         prev_tid = extract_topic_id_from_text_block(prev)
         if !prev_tid.empty? && protected[prev_tid]
           next
@@ -781,6 +762,31 @@ module ::DigestCampaigns
   end
 
   module UserNotificationsExtension
+    def self.plain_text_from_post(post)
+      return "" if post.nil?
+
+      raw = post.respond_to?(:raw) ? post.raw.to_s : ""
+      raw = raw.strip
+      return raw unless raw.empty?
+
+      cooked = post.respond_to?(:cooked) ? post.cooked.to_s : ""
+      return "" if cooked.empty?
+
+      if Nokogiri
+        Nokogiri::HTML(cooked).text.to_s
+      else
+        cooked.gsub(/<[^>]+>/, " ")
+      end
+    rescue
+      ""
+    end
+
+    def self.smart_trim_preview(text, max_chars)
+      ::DigestCampaigns::DigestAppendData.smart_trim_plain(text.to_s, max_chars)
+    rescue
+      text.to_s[0, max_chars].to_s
+    end
+
     def digest(user, opts = {})
       campaign_topic_ids = opts[:campaign_topic_ids]
       campaign_key = opts[:campaign_key]
@@ -794,12 +800,20 @@ module ::DigestCampaigns
 
       @campaign_key = campaign_key.to_s
       @unsubscribe_key = UnsubscribeKey.create_key_for(@user, UnsubscribeKey::DIGEST_TYPE)
-      @since = campaign_since.presence || [user.last_seen_at, 1.month.ago].compact.max
+
+      # ============================================================
+      # CHANGE: remove "Since your last visit" completely for campaigns
+      # ============================================================
+      @since = nil
+      @counts = []
 
       ids = Array(campaign_topic_ids).map(&:to_i).select { |x| x > 0 }.uniq
       topics = Topic.where(id: ids).includes(:category, :user, :first_post).to_a
       by_id = topics.index_by(&:id)
       topics_for_digest = ids.map { |id| by_id[id] }.compact
+
+      first_topic = topics_for_digest.first
+      first_post  = first_topic&.first_post
 
       popular_n = SiteSetting.digest_topics.to_i
       popular_n = 0 if popular_n < 0
@@ -828,27 +842,28 @@ module ::DigestCampaigns
         @excerpts[p.id] = email_excerpt(p.cooked, p)
       end
 
-      @counts = [
-        {
-          id: "new_topics",
-          label_key: "user_notifications.digest.new_topics",
-          value: topics_for_digest.size,
-          href: "#{Discourse.base_url}/new",
-        },
-      ]
+      # Subject + preheader from FIRST topic
+      if first_topic
+        subj = first_topic.title.to_s.strip
+        subject = self.class.smart_trim_preview(subj, 200)
 
-      @preheader_text = I18n.t("user_notifications.digest.preheader", since: @since)
+        preview = self.class.plain_text_from_post(first_post)
+        preview = ::DigestCampaigns::DigestAppendData.normalize_spaces(preview)
+        preview = self.class.smart_trim_preview(preview, 150)
+        @preheader_text = preview
+      else
+        base_subject =
+          I18n.t(
+            "user_notifications.digest.subject_template",
+            email_prefix: @email_prefix,
+            date: short_date(Time.now)
+          )
+        prefix = SiteSetting.digest_campaigns_subject_prefix.to_s.strip
+        prefix = "[Campaign Digest]" if prefix.blank?
+        subject = "#{prefix} - #{base_subject} - #{@campaign_key}".strip
 
-      base_subject =
-        I18n.t(
-          "user_notifications.digest.subject_template",
-          email_prefix: @email_prefix,
-          date: short_date(Time.now)
-        )
-
-      prefix = SiteSetting.digest_campaigns_subject_prefix.to_s.strip
-      prefix = "[Campaign Digest]" if prefix.blank?
-      subject = "#{prefix} - #{base_subject} - #{@campaign_key}".strip
+        @preheader_text = "Campaign Digest"
+      end
 
       html = render_to_string(template: "user_notifications/digest", formats: [:html])
 
@@ -879,9 +894,6 @@ module ::DigestCampaigns
         post_ids: topics_for_digest.map { |t| t.first_post&.id }.compact
       )
 
-      # ============================================================
-      # Apply append+rewrite+trim (campaign only)
-      # ============================================================
       begin
         email_id = ::DigestCampaigns::DigestAppendData.generate_email_id
         ::DigestCampaigns::DigestAppendData.process_html_part!(message, user, email_id)
