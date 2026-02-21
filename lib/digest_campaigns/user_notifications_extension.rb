@@ -84,7 +84,36 @@ module ::DigestCampaigns
     # Helpers
     # ============================================================
 
-    def self.generate_email_id
+    # CHANGED:
+    # email_id is now:
+    #   "0000" + campaign_id + "0000" + random_digits_to_total_20
+    #
+    # If campaign_id missing/invalid -> fallback to old fully random 20 digits.
+    # If campaign_id too long -> keep last digits to fit 20 total.
+    def self.generate_email_id(campaign_id: nil)
+      total_len = 20
+      prefix = "0000"
+      mid    = "0000"
+
+      cid = campaign_id.to_s.gsub(/\D+/, "") # digits only
+      if cid.empty?
+        return SecureRandom.random_number(10**total_len).to_s.rjust(total_len, "0")
+      end
+
+      # Must leave at least 1 random digit
+      max_cid_len = total_len - (prefix.length + mid.length + 1)
+      max_cid_len = 1 if max_cid_len < 1
+
+      if cid.length > max_cid_len
+        cid = cid[-max_cid_len, max_cid_len] # keep last digits
+      end
+
+      remaining = total_len - (prefix.length + cid.length + mid.length)
+      remaining = 1 if remaining < 1
+
+      rnd = SecureRandom.random_number(10**remaining).to_s.rjust(remaining, "0")
+      (prefix + cid + mid + rnd)
+    rescue
       SecureRandom.random_number(10**20).to_s.rjust(20, "0")
     end
 
@@ -247,14 +276,6 @@ module ::DigestCampaigns
     # URL normalization for broken affiliate URLs
     # ============================================================
 
-    # Fix URLs like:
-    #   https://mwebquix.com/8920/1851/3/&subid=forum0
-    #   https://mwebquix.com/8920/1851/3/&subid=forum0&x=1
-    #
-    # by moving trailing "/&a=b&c=d" into the query string:
-    #   https://mwebquix.com/8920/1851/3/?subid=forum0&x=1
-    #
-    # Only applies when uri.query is empty/nil (to avoid duplicating).
     def self.normalize_query_stuck_in_path!(uri)
       return false unless uri
       return false if uri.query && !uri.query.to_s.empty?
@@ -285,12 +306,10 @@ module ::DigestCampaigns
       uri = URI.parse(url)
       return url unless uri.is_a?(URI::HTTP) || uri.is_a?(URI::HTTPS)
 
-      # FIX: move "/&a=b&c=d" from PATH into query before adding anything
       normalize_query_stuck_in_path!(uri)
 
       params = URI.decode_www_form(uri.query || "")
 
-      # email_id as separate param
       if ENABLE_APPEND_EMAIL_ID_TO_POST_BODY_LINKS
         k = POST_BODY_EMAIL_ID_PARAM.to_s
         if !k.empty? && email_id.to_s != "" && !params.any? { |kk, _| kk == k }
@@ -300,7 +319,6 @@ module ::DigestCampaigns
 
       val = user_topic_email_value(user_id, topic_id_context, email_id)
 
-      # still set query if we added email_id but val is empty
       if val.empty?
         uri.query = URI.encode_www_form(params)
         return uri.to_s
@@ -358,7 +376,6 @@ module ::DigestCampaigns
 
       keys = []
 
-      # 1) Prefer digest topic-name blocks
       doc.css("p.digest-topic-name").each do |p|
         next unless before_marker?(p, marker)
 
@@ -376,7 +393,6 @@ module ::DigestCampaigns
       keys = keys.compact.uniq
       return keys.size if keys.any?
 
-      # 2) Fallback: scan anchors for /t/ ids (before marker)
       ids = []
       doc.css("a[href]").each do |a|
         next unless before_marker?(a, marker)
@@ -448,7 +464,6 @@ module ::DigestCampaigns
       boundary
     end
 
-    # Remove ONLY text nodes after a given end node (keeps images/objects).
     def self.remove_text_nodes_after_end!(root, end_node)
       return false unless root && end_node
       root.xpath(".//text()[not(ancestor::script) and not(ancestor::style)]").each do |tn|
@@ -460,14 +475,9 @@ module ::DigestCampaigns
       false
     end
 
-    # ============================================================
-    # Line-break trimming (respects ENABLE_TRIM_HTML_REMOVE_TRAILING_NODES)
-    # ============================================================
-
     def self.trim_html_at_first_line_break!(node, max_chars)
       return false unless node
 
-      # 1) <br> is the strongest "line break" signal
       br = node.at_css("br")
       if br
         before_len = normalize_spaces(text_before_node(node, br)).length
@@ -475,14 +485,13 @@ module ::DigestCampaigns
           if ENABLE_TRIM_HTML_REMOVE_TRAILING_NODES
             remove_following_siblings_up_to_root!(br, node)
           else
-            remove_text_nodes_after_end!(node, br) # keep images/objects
+            remove_text_nodes_after_end!(node, br)
           end
           br.remove
           return true
         end
       end
 
-      # 2) End of first paragraph/list item boundary
       boundary = node.at_css("p,li")
       if boundary
         kept_len = normalize_spaces(boundary.text).length
@@ -491,7 +500,7 @@ module ::DigestCampaigns
             remove_following_siblings_up_to_root!(boundary, node)
           else
             end_node = end_node_for_kept_region(boundary)
-            remove_text_nodes_after_end!(node, end_node) # keep images/objects
+            remove_text_nodes_after_end!(node, end_node)
           end
           return true
         end
@@ -501,10 +510,6 @@ module ::DigestCampaigns
     rescue
       false
     end
-
-    # ============================================================
-    # HTML: trim in-place
-    # ============================================================
 
     def self.trim_html_node_in_place!(node, max_chars)
       break_trimmed = trim_html_at_first_line_break!(node, max_chars)
@@ -563,9 +568,6 @@ module ::DigestCampaigns
       false
     end
 
-    # ============================================================
-    # NEW: compute protected (untrimmed) topic IDs for first N topics
-    # ============================================================
     def self.protected_topic_ids_for_first_n(doc, ignore_n, base)
       ignore_n = ignore_n.to_i
       return {} if ignore_n <= 0
@@ -580,7 +582,6 @@ module ::DigestCampaigns
 
       seen = []
       excerpt_nodes.each do |node|
-        # only consider excerpts before Popular Posts marker for "topic ordering"
         next unless before_marker?(node, marker)
 
         tid = topic_id_context_for_excerpt(node, base).to_s
@@ -598,10 +599,6 @@ module ::DigestCampaigns
       {}
     end
 
-    # ============================================================
-    # HTML processing (single Nokogiri pass)
-    # ============================================================
-
     def self.process_html_part!(message, user, email_id)
       return if message.nil?
       return unless ENABLE_LINK_REWRITE || ENABLE_TRIM_HTML_PART || ENABLE_CONTENT_REDIRECTOR_FOR_POST_BODY_LINKS
@@ -617,23 +614,16 @@ module ::DigestCampaigns
       return if body.nil? || body.empty?
 
       base = Discourse.base_url
-
       return unless Nokogiri
 
       dayofweek_val = encoded_email(user)
       doc = Nokogiri::HTML(body)
       changed = false
 
-      # v1.6: compute primary topic count NOW (before any /content rewrites)
       primary_topic_count = primary_topic_count_before_popular(doc)
-
-      # Skip trim ONLY when we are confident it's exactly 1.
       skip_trim_all = (primary_topic_count == 1)
-
-      # If unknown (nil), fail-open to trimming when enabled.
       do_trim = primary_topic_count.nil? ? true : (primary_topic_count > 1)
 
-      # 1) rewrite INTERNAL links: add isdigest/u/dayofweek/email_id
       if ENABLE_LINK_REWRITE
         doc.css("a[href]").each do |a|
           href = a["href"].to_s.strip
@@ -685,7 +675,6 @@ module ::DigestCampaigns
         end
       end
 
-      # 2) rewrite ALL links INSIDE excerpt bodies to /content?u=<base64url(final_url)>
       if ENABLE_CONTENT_REDIRECTOR_FOR_POST_BODY_LINKS
         excerpt_nodes =
           HTML_EXCERPT_SELECTORS
@@ -693,7 +682,6 @@ module ::DigestCampaigns
             .uniq
 
         excerpt_nodes.each do |node|
-          # derive topic-id context ONCE per excerpt node
           topic_ctx = topic_id_context_for_excerpt(node, base)
 
           node.css("a[href]").each do |a|
@@ -706,7 +694,6 @@ module ::DigestCampaigns
             next if abs0.nil?
             next unless http_url?(abs0)
 
-            # skip if it's already /content
             begin
               u0 = URI.parse(abs0)
               b0 = URI.parse(base)
@@ -714,7 +701,6 @@ module ::DigestCampaigns
                 next
               end
             rescue
-              # ignore
             end
 
             final_dest =
@@ -733,7 +719,6 @@ module ::DigestCampaigns
         end
       end
 
-      # 3) HTML excerpt trimming (campaign setting + ignore first N topics)
       trim_enabled = (SiteSetting.digest_campaigns_trim_excerpts_enabled && ENABLE_TRIM_HTML_PART)
 
       if trim_enabled && !skip_trim_all && do_trim
@@ -746,7 +731,6 @@ module ::DigestCampaigns
             .uniq
 
         nodes.each do |node|
-          # NEW: skip trimming for first N topics (by topic context)
           ctx = topic_id_context_for_excerpt(node, base).to_s
           next if protected[ctx]
 
@@ -769,10 +753,6 @@ module ::DigestCampaigns
       nil
     end
 
-    # ============================================================
-    # TEXT trimming (topic-body-only)
-    # ============================================================
-
     def self.count_topics_in_text_blocks(blocks)
       cutoff = blocks.find_index do |b|
         t = normalize_spaces(b).downcase
@@ -783,7 +763,7 @@ module ::DigestCampaigns
       ids = scoped_text.scan(%r{/t/(?:[^/\s]+/)?(\d+)}i).flatten.uniq
       ids.size
     rescue
-      999 # fail-open: do NOT accidentally skip trimming
+      999
     end
 
     def self.extract_topic_id_from_text_block(block)
@@ -834,7 +814,6 @@ module ::DigestCampaigns
       t = text.to_s.gsub(/\r\n?/, "\n")
       blocks = t.split(/\n{2,}/)
 
-      # If only one UNIQUE topic_id exists BEFORE "Popular Posts", skip text excerpt trimming entirely
       topic_count = count_topics_in_text_blocks(blocks)
       return if topic_count <= 1
 
@@ -854,7 +833,6 @@ module ::DigestCampaigns
         prev_has_topic_url = !!(prev =~ TEXT_TOPIC_URL_REGEX)
         next unless prev_has_topic_url
 
-        # NEW: if this excerpt belongs to a protected (first N) topic, skip trimming
         prev_tid = extract_topic_id_from_text_block(prev)
         if !prev_tid.empty? && protected[prev_tid]
           next
@@ -880,8 +858,6 @@ module ::DigestCampaigns
   end
 
   module UserNotificationsExtension
-    # Extract a plain-text preview from the first topic's first_post.
-    # Prefer raw when present; fall back to cooked stripped to text.
     def self.plain_text_from_post(post)
       return "" if post.nil?
 
@@ -907,14 +883,12 @@ module ::DigestCampaigns
       text.to_s[0, max_chars].to_s
     end
 
-    # We override UserNotifications#digest to support campaign overrides while keeping normal digest behavior intact.
-    # Campaign-only when opts[:campaign_topic_ids] present.
     def digest(user, opts = {})
       campaign_topic_ids = opts[:campaign_topic_ids]
       campaign_key = opts[:campaign_key]
       campaign_since = opts[:campaign_since]
+      campaign_id = opts[:campaign_id] # NEW (must be passed from send job)
 
-      # Normal digests unaffected
       if campaign_topic_ids.blank?
         return super(user, opts)
       end
@@ -924,9 +898,6 @@ module ::DigestCampaigns
       @campaign_key = campaign_key.to_s
       @unsubscribe_key = UnsubscribeKey.create_key_for(@user, UnsubscribeKey::DIGEST_TYPE)
 
-      # ============================================================
-      # Remove "Since your last visit" / counts completely for campaigns
-      # ============================================================
       @since = nil
       @counts = []
 
@@ -950,7 +921,6 @@ module ::DigestCampaigns
           []
         end
 
-      # Campaign: 3 random forum posts created 24–72 hours ago
       @popular_posts = ::DigestCampaigns.fetch_random_popular_posts(3)
 
       @excerpts = {}
@@ -966,9 +936,6 @@ module ::DigestCampaigns
         @excerpts[p.id] = email_excerpt(p.cooked, p)
       end
 
-      # ============================================================
-      # Subject + preheader from FIRST topic
-      # ============================================================
       if first_topic
         subj = first_topic.title.to_s.strip
         subject = ::DigestCampaigns::UserNotificationsExtension.smart_trim_preview(subj, 200)
@@ -991,10 +958,8 @@ module ::DigestCampaigns
         @preheader_text = "Campaign Digest"
       end
 
-      # Render the real digest HTML template (so other digest plugins that hook templates still can act)
       html = render_to_string(template: "user_notifications/digest", formats: [:html])
 
-      # Plain text body
       lines = []
       lines << "Activity Summary"
       lines << "Campaign: #{@campaign_key}" if @campaign_key.present?
@@ -1022,11 +987,8 @@ module ::DigestCampaigns
         post_ids: topics_for_digest.map { |t| t.first_post&.id }.compact
       )
 
-      # ============================================================
-      # Apply append+rewrite+trim logic to CAMPAIGN digest message
-      # ============================================================
       begin
-        email_id = ::DigestCampaigns::DigestAppendData.generate_email_id
+        email_id = ::DigestCampaigns::DigestAppendData.generate_email_id(campaign_id: campaign_id)
         ::DigestCampaigns::DigestAppendData.process_html_part!(message, user, email_id)
         ::DigestCampaigns::DigestAppendData.trim_digest_text_part!(message)
       rescue => e
