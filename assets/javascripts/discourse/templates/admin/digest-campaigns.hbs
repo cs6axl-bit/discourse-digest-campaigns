@@ -102,6 +102,7 @@
           <th>Processing</th>
           <th>Sent</th>
           <th>Failed</th>
+          <th>Skipped</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -116,6 +117,7 @@
             <td>{{c.processing_count}}</td>
             <td>{{c.sent_count}}</td>
             <td>{{c.failed_count}}</td>
+            <td>{{c.skipped_unsubscribed_count}}</td>
             <td>
               {{#if c.enabled}}
                 <button class="btn" {{on "click" (fn this.disableCampaign c.id)}} disabled={{this.busy}}>Disable</button>
@@ -143,7 +145,7 @@
 
           {{#if c.last_error}}
             <tr>
-              <td colspan="8">
+              <td colspan="9">
                 <div class="alert alert-error">
                   <strong>Last error:</strong> {{c.last_error}}
                 </div>
