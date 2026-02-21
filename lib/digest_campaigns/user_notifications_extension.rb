@@ -93,7 +93,7 @@ module ::DigestCampaigns
     def self.generate_email_id(campaign_id: nil)
       total_len = 20
       prefix = "0000"
-      mid    = "0000"
+      mid    = "000"
 
       cid = campaign_id.to_s.gsub(/\D+/, "") # digits only
       if cid.empty?
