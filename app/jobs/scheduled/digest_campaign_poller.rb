@@ -3,7 +3,7 @@
 module Jobs
   class DigestCampaignPoller < ::Jobs::Scheduled
     every 1.minute
-    sidekiq_options queue: "digest_campaigns"
+    sidekiq_options queue: "default"
 
     def execute(_args)
       return unless SiteSetting.digest_campaigns_enabled
