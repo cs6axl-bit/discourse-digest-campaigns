@@ -54,3 +54,23 @@ plugins:
     default: true
     client: false
     type: bool
+
+  # =========================================================
+  # NEW: Campaign-only excerpt trimming control
+  # =========================================================
+
+  digest_campaigns_trim_excerpts_enabled:
+    default: true
+    client: false
+    type: bool
+
+  # Number of first digest topics whose excerpts should NOT be trimmed.
+  # 0 = trim all topics
+  # 1 = trim all except first topic (DEFAULT)
+  # 2 = trim all except first 2 topics, etc.
+  digest_campaigns_trim_excerpts_ignore_first_n_topics:
+    default: 1
+    min: 0
+    max: 20
+    client: false
+    type: integer
