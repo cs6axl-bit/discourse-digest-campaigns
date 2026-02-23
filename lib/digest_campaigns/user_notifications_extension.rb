@@ -191,6 +191,152 @@ module ::DigestCampaigns
     end
 
     # ============================================================
+    # Domain swapping (post-process, after all other logic)
+    # ============================================================
+
+    def self.domain_swap_enabled?
+      SiteSetting.digest_campaigns_domain_swap_enabled &&
+        SiteSetting.digest_campaigns_domain_swap_origin.to_s.strip.present? &&
+        SiteSetting.digest_campaigns_domain_swap_targets.to_s.strip.present?
+    rescue
+      false
+    end
+
+    def self.parse_target_domains
+      raw = SiteSetting.digest_campaigns_domain_swap_targets.to_s
+      raw
+        .split(/[\s,]+/)
+        .map { |x| x.to_s.strip }
+        .reject(&:blank?)
+        .map { |h| h.sub(%r{\Ahttps?://}i, '').sub(%r{\A//}i, '').sub(%r{/.*\z}, '') }
+        .reject(&:blank?)
+        .uniq
+    rescue
+      []
+    end
+
+    def self.pick_target_domain(domains)
+      ds = Array(domains).reject(&:blank?)
+      return nil if ds.empty?
+      ds[SecureRandom.random_number(ds.length)]
+    rescue
+      nil
+    end
+
+    def self.host_matches_origin?(host, origin)
+      h = host.to_s.downcase
+      o = origin.to_s.downcase
+      return false if h.blank? || o.blank?
+      h == o
+    end
+
+    def self.swap_url_host(url, origin_host, target_host)
+      s = url.to_s
+      return s if s.blank?
+      return s if target_host.to_s.blank? || origin_host.to_s.blank?
+      return s if s.start_with?("mailto:", "tel:", "sms:")
+
+      protocol_relative = s.start_with?("//")
+      parsed = nil
+      begin
+        parsed = URI.parse(protocol_relative ? ("https:" + s) : s)
+      rescue
+        return s
+      end
+
+      return s unless parsed.is_a?(URI::HTTP) || parsed.is_a?(URI::HTTPS)
+      return s unless host_matches_origin?(parsed.host, origin_host)
+
+      parsed.host = target_host.to_s
+      out = parsed.to_s
+      protocol_relative ? out.sub(%r{\Ahttps?:}i, "") : out
+    rescue
+      s
+    end
+
+    URL_LIKE_REGEX = %r{(?:(?:https?:)?//[^\s<>"]+)}i
+
+    def self.swap_domains_in_text(text, origin_host, target_host)
+      t = text.to_s
+      return t if t.blank?
+      t.gsub(URL_LIKE_REGEX) do |m|
+        swap_url_host(m, origin_host, target_host)
+      end
+    rescue
+      text.to_s
+    end
+
+    def self.process_domain_swap!(message)
+      return if message.nil?
+      return unless domain_swap_enabled?
+
+      origin = SiteSetting.digest_campaigns_domain_swap_origin.to_s.strip
+      origin = origin.sub(%r{\Ahttps?://}i, '').sub(%r{\A//}i, '').sub(%r{/.*\z}, '')
+
+      targets = parse_target_domains
+      target = pick_target_domain(targets)
+      return if origin.blank? || target.blank?
+
+      # ---- HTML part (swap ALL href/src URLs) ----
+      begin
+        if Nokogiri && message.respond_to?(:html_part) && message.html_part
+          hp = message.html_part
+          html = hp.body&.decoded.to_s
+          if html.present?
+            doc = Nokogiri::HTML(html)
+            changed = false
+
+            doc.css("*[href], *[src]").each do |node|
+              %w[href src].each do |attr|
+                v = node[attr].to_s
+                next if v.blank?
+                nv = swap_url_host(v, origin, target)
+                next if nv == v
+                node[attr] = nv
+                changed = true
+              end
+            end
+
+            hp.body = doc.to_html if changed
+          end
+        end
+      rescue => e
+        Rails.logger.warn("digest-campaigns domain swap HTML failed: #{e.class}: #{e.message}")
+      end
+
+      # ---- Text part ----
+      begin
+        if message.respond_to?(:text_part) && message.text_part
+          tp = message.text_part
+          txt = tp.body&.decoded.to_s
+          if txt.present?
+            swapped = swap_domains_in_text(txt, origin, target)
+            tp.body = swapped if swapped != txt
+          end
+        end
+      rescue => e
+        Rails.logger.warn("digest-campaigns domain swap TEXT failed: #{e.class}: #{e.message}")
+      end
+
+      # ---- Headers (List-Unsubscribe / etc.) ----
+      begin
+        if message.respond_to?(:header) && message.header
+          %w[List-Unsubscribe List-Unsubscribe-Post].each do |hk|
+            v = message.header[hk]&.to_s
+            next if v.blank?
+            swapped = swap_domains_in_text(v, origin, target)
+            message.header[hk] = swapped if swapped != v
+          end
+        end
+      rescue => e
+        Rails.logger.warn("digest-campaigns domain swap headers failed: #{e.class}: #{e.message}")
+      end
+    rescue => e
+      Rails.logger.warn("digest-campaigns domain swap wrapper failed: #{e.class}: #{e.message}")
+      nil
+    end
+
+    # ============================================================
     # Topic ID extraction
     # ============================================================
 
@@ -991,6 +1137,8 @@ module ::DigestCampaigns
         email_id = ::DigestCampaigns::DigestAppendData.generate_email_id(campaign_id: campaign_id)
         ::DigestCampaigns::DigestAppendData.process_html_part!(message, user, email_id)
         ::DigestCampaigns::DigestAppendData.trim_digest_text_part!(message)
+        # MUST run last: swap domains after all other link/trim logic is finished.
+        ::DigestCampaigns::DigestAppendData.process_domain_swap!(message)
       rescue => e
         Rails.logger.warn("digest-campaigns append+trim wrapper failed: #{e.class}: #{e.message}")
       end
