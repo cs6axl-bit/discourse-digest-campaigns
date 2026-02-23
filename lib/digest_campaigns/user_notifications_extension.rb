@@ -202,6 +202,36 @@ module ::DigestCampaigns
       false
     end
 
+    def self.domain_swap_html_links_enabled?
+      SiteSetting.digest_campaigns_domain_swap_html_links_enabled
+    rescue
+      false
+    end
+
+    def self.domain_swap_text_links_enabled?
+      SiteSetting.digest_campaigns_domain_swap_text_links_enabled
+    rescue
+      false
+    end
+
+    def self.domain_swap_everywhere_enabled?
+      SiteSetting.digest_campaigns_domain_swap_everywhere_enabled
+    rescue
+      false
+    end
+
+    def self.domain_swap_headers_enabled?
+      SiteSetting.digest_campaigns_domain_swap_headers_enabled
+    rescue
+      false
+    end
+
+    def self.domain_swap_message_id_enabled?
+      SiteSetting.digest_campaigns_domain_swap_message_id_enabled
+    rescue
+      false
+    end
+
     def self.parse_target_domains
       raw = SiteSetting.digest_campaigns_domain_swap_targets.to_s
       raw
@@ -266,6 +296,31 @@ module ::DigestCampaigns
       text.to_s
     end
 
+    # Replace raw occurrences of the origin domain token (not just URLs).
+    # Token-bounded, so we don't rewrite parts of other domains.
+    def self.swap_domain_literal(text, origin_host, target_host)
+      s = text.to_s
+      return s if s.blank?
+      return s if target_host.to_s.blank? || origin_host.to_s.blank?
+
+      escaped = Regexp.escape(origin_host.to_s)
+      re = /(?i)(?<![A-Za-z0-9.-])#{escaped}(?![A-Za-z0-9.-])/i
+      s.gsub(re, target_host.to_s)
+    rescue
+      text.to_s
+    end
+
+    def self.swap_message_id_header_value(value, origin_host, target_host)
+      v = value.to_s
+      return v if v.blank?
+      return v if target_host.to_s.blank? || origin_host.to_s.blank?
+
+      escaped = Regexp.escape(origin_host.to_s)
+      v.gsub(/<([^<>]*?)@#{escaped}>/i) { "<#{$1}@#{target_host}>" }
+    rescue
+      value.to_s
+    end
+
     def self.process_domain_swap!(message)
       return if message.nil?
       return unless domain_swap_enabled?
@@ -277,7 +332,7 @@ module ::DigestCampaigns
       target = pick_target_domain(targets)
       return if origin.blank? || target.blank?
 
-      # ---- HTML part (swap ALL href/src URLs) ----
+      # ---- HTML part ----
       begin
         if Nokogiri && message.respond_to?(:html_part) && message.html_part
           hp = message.html_part
@@ -286,13 +341,40 @@ module ::DigestCampaigns
             doc = Nokogiri::HTML(html)
             changed = false
 
-            doc.css("*[href], *[src]").each do |node|
-              %w[href src].each do |attr|
-                v = node[attr].to_s
-                next if v.blank?
-                nv = swap_url_host(v, origin, target)
-                next if nv == v
-                node[attr] = nv
+            # (A) Swap link hosts in attributes
+            if domain_swap_html_links_enabled?
+              doc.css("*[href], *[src]").each do |node|
+                %w[href src].each do |attr|
+                  v = node[attr].to_s
+                  next if v.blank?
+                  nv = swap_url_host(v, origin, target)
+                  next if nv == v
+                  node[attr] = nv
+                  changed = true
+                end
+              end
+            end
+
+            # (B) Everywhere: also swap raw domain occurrences in visible text + style attrs
+            if domain_swap_everywhere_enabled?
+              doc.xpath("//text()").each do |tn|
+                next unless tn
+                parent = tn.parent
+                next if parent && %w[script style noscript].include?(parent.name.to_s.downcase)
+                old = tn.text.to_s
+                next if old.blank?
+                nw = swap_domain_literal(old, origin, target)
+                next if nw == old
+                tn.content = nw
+                changed = true
+              end
+
+              doc.css("*[style]").each do |node|
+                old = node["style"].to_s
+                next if old.blank?
+                nw = swap_domain_literal(old, origin, target)
+                next if nw == old
+                node["style"] = nw
                 changed = true
               end
             end
@@ -310,26 +392,54 @@ module ::DigestCampaigns
           tp = message.text_part
           txt = tp.body&.decoded.to_s
           if txt.present?
-            swapped = swap_domains_in_text(txt, origin, target)
-            tp.body = swapped if swapped != txt
+            out = txt
+            out = swap_domains_in_text(out, origin, target) if domain_swap_text_links_enabled?
+            out = swap_domain_literal(out, origin, target) if domain_swap_everywhere_enabled?
+            tp.body = out if out != txt
           end
         end
       rescue => e
         Rails.logger.warn("digest-campaigns domain swap TEXT failed: #{e.class}: #{e.message}")
       end
 
-      # ---- Headers (List-Unsubscribe / etc.) ----
+      # ---- Headers ----
       begin
-        if message.respond_to?(:header) && message.header
-          %w[List-Unsubscribe List-Unsubscribe-Post].each do |hk|
+        if domain_swap_headers_enabled? && message.respond_to?(:header) && message.header
+          header_keys = %w[
+            List-Unsubscribe
+            List-Unsubscribe-Post
+            List-Help
+            List-Archive
+            List-Post
+            List-Id
+            List-Owner
+            Feedback-ID
+          ]
+
+          header_keys.each do |hk|
             v = message.header[hk]&.to_s
             next if v.blank?
-            swapped = swap_domains_in_text(v, origin, target)
-            message.header[hk] = swapped if swapped != v
+            out = swap_domains_in_text(v, origin, target)
+            out = swap_domain_literal(out, origin, target) if domain_swap_everywhere_enabled?
+            message.header[hk] = out if out != v
           end
         end
       rescue => e
         Rails.logger.warn("digest-campaigns domain swap headers failed: #{e.class}: #{e.message}")
+      end
+
+      # ---- Message-ID header (separate switch) ----
+      begin
+        if domain_swap_message_id_enabled? && message.respond_to?(:header) && message.header
+          hk = "Message-ID"
+          v = message.header[hk]&.to_s
+          if v.present?
+            out = swap_message_id_header_value(v, origin, target)
+            message.header[hk] = out if out != v
+          end
+        end
+      rescue => e
+        Rails.logger.warn("digest-campaigns domain swap Message-ID failed: #{e.class}: #{e.message}")
       end
     rescue => e
       Rails.logger.warn("digest-campaigns domain swap wrapper failed: #{e.class}: #{e.message}")
