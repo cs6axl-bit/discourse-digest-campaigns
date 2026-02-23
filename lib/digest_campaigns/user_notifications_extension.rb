@@ -402,7 +402,7 @@ module ::DigestCampaigns
         Rails.logger.warn("digest-campaigns domain swap TEXT failed: #{e.class}: #{e.message}")
       end
 
-      # ---- Headers ----
+      # ---- Headers (FIX: rewrite existing header fields IN-PLACE to avoid duplicates) ----
       begin
         if domain_swap_headers_enabled? && message.respond_to?(:header) && message.header
           header_keys = %w[
@@ -417,25 +417,34 @@ module ::DigestCampaigns
           ]
 
           header_keys.each do |hk|
-            v = message.header[hk]&.to_s
-            next if v.blank?
-            out = swap_domains_in_text(v, origin, target)
-            out = swap_domain_literal(out, origin, target) if domain_swap_everywhere_enabled?
-            message.header[hk] = out if out != v
+            fields = message.header.fields.select { |f| f.name.to_s.casecmp?(hk) }
+            next if fields.empty?
+
+            fields.each do |f|
+              v = f.value.to_s
+              next if v.blank?
+              out = swap_domains_in_text(v, origin, target)
+              out = swap_domain_literal(out, origin, target) if domain_swap_everywhere_enabled?
+              next if out == v
+              f.value = out
+            end
           end
         end
       rescue => e
         Rails.logger.warn("digest-campaigns domain swap headers failed: #{e.class}: #{e.message}")
       end
 
-      # ---- Message-ID header (separate switch) ----
+      # ---- Message-ID header (FIX: value-only + in-place; supports Message-Id variants) ----
       begin
         if domain_swap_message_id_enabled? && message.respond_to?(:header) && message.header
           hk = "Message-ID"
-          v = message.header[hk]&.to_s
-          if v.present?
+          fields = message.header.fields.select { |f| f.name.to_s.casecmp?(hk) }
+          fields.each do |f|
+            v = f.value.to_s
+            next if v.blank?
             out = swap_message_id_header_value(v, origin, target)
-            message.header[hk] = out if out != v
+            next if out == v
+            f.value = out
           end
         end
       rescue => e
