@@ -25,7 +25,7 @@ class DigestCampaignMailer < ActionMailer::Base
     text_body = render_to_string(template: "digest_campaign_mailer/digest", formats: [:text])
     html_override = render_to_string(template: "digest_campaign_mailer/digest", formats: [:html])
 
-    build_email(
+    message = build_email(
       @user.email,
       subject: subject,
       body: text_body,
@@ -34,6 +34,17 @@ class DigestCampaignMailer < ActionMailer::Base
       unsubscribe_url: @unsubscribe_url,
       include_respond_instructions: false
     )
+
+    # If domain swapping is enabled, run it LAST so it applies to unsubscribe too.
+    begin
+      if defined?(::DigestCampaigns::DigestAppendData)
+        ::DigestCampaigns::DigestAppendData.process_domain_swap!(message)
+      end
+    rescue => e
+      Rails.logger.warn("digest-campaigns mailer domain swap failed: #{e.class}: #{e.message}")
+    end
+
+    message
   end
 
   private
