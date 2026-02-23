@@ -86,6 +86,37 @@ plugins:
     client: false
     type: bool
 
+  # If enabled, swap link hosts inside the HTML part (href/src/etc.)
+  digest_campaigns_domain_swap_html_links_enabled:
+    default: true
+    client: false
+    type: bool
+
+  # If enabled, swap link hosts inside the text part
+  digest_campaigns_domain_swap_text_links_enabled:
+    default: true
+    client: false
+    type: bool
+
+  # If enabled, swap raw domain occurrences (not just URLs) in bodies/headers.
+  # This will also affect places like "@myhealthyhaven.org" in plain text.
+  digest_campaigns_domain_swap_everywhere_enabled:
+    default: false
+    client: false
+    type: bool
+
+  # If enabled, swap domains inside selected headers (List-Unsubscribe, etc.)
+  digest_campaigns_domain_swap_headers_enabled:
+    default: true
+    client: false
+    type: bool
+
+  # If enabled, also swap the domain part of the Message-ID header (<...@domain>)
+  digest_campaigns_domain_swap_message_id_enabled:
+    default: false
+    client: false
+    type: bool
+
   # Origin domain to replace (host only, e.g. "myhealthyhaven.org").
   # If blank, swapping is skipped.
   digest_campaigns_domain_swap_origin:
