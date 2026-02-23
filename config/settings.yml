@@ -74,3 +74,29 @@ plugins:
     max: 20
     client: false
     type: integer
+
+  # =========================================================
+  # NEW: Domain swapping (post-process, after all other logic)
+  # =========================================================
+
+  # If enabled, the plugin will replace the host of ALL http(s) links in the final email
+  # (HTML + text + unsubscribe) where the host matches digest_campaigns_domain_swap_origin.
+  digest_campaigns_domain_swap_enabled:
+    default: false
+    client: false
+    type: bool
+
+  # Origin domain to replace (host only, e.g. "myhealthyhaven.org").
+  # If blank, swapping is skipped.
+  digest_campaigns_domain_swap_origin:
+    default: ""
+    client: false
+    type: string
+
+  # One or more target domains (hosts) to swap to.
+  # Supply comma / space / newline separated values. A random one is chosen per email.
+  # Example: "a.example.com,b.example.com"
+  digest_campaigns_domain_swap_targets:
+    default: ""
+    client: false
+    type: string
