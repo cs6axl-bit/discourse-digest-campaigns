@@ -52,6 +52,21 @@
     </div>
 
     <div class="control-group">
+      <label class="control-label">exclude recent queue users</label>
+      <div class="controls">
+        <label class="checkbox" style="display:block;">
+          <Input @type="checkbox" @checked={{this.exclude_recent_from_queue}} />
+          Exclude users with queue records from the last
+          <Input @value={{this.exclude_recent_from_queue_days}} @type="number" class="input-small" min="0" step="1" style="margin:0 6px;" />
+          day(s)
+        </label>
+        <div class="help-block">
+          Regular (non-delayed) queue rows are excluded if they were enqueued in the timeframe. Delayed-send rows are excluded only if they were actually sent in the timeframe.
+        </div>
+      </div>
+    </div>
+
+    <div class="control-group">
       <label class="control-label">topic_set_1</label>
       <div class="controls">
         <Input @value={{this.topic_set_1}} class="input-xxlarge" placeholder="3782,1351,1423,1374" />
