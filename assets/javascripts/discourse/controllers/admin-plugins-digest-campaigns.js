@@ -181,6 +181,12 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   @action
   async createCampaign() {
     this.clearMessages();
+
+    // Confirm before creating the campaign (creates rows + populates the send queue)
+    if (!confirm("Save this campaign and populate the send queue?")) {
+      return;
+    }
+
     this.busy = true;
 
     try {
