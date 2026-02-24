@@ -41,6 +41,11 @@ module Admin
       key = params.require(:campaign_key).to_s.strip
       sql = ::DigestCampaigns.validate_campaign_sql!(params.require(:selection_sql).to_s)
 
+      exclude_recent = truthy_param?(params[:exclude_recent_from_queue], default: true)
+      exclude_days = int_param?(params[:exclude_recent_from_queue_days], default: 1)
+      exclude_days = 0 if exclude_days < 0
+      exclude_days = 3650 if exclude_days > 3650
+
       set1 = ::DigestCampaigns.parse_topic_set_csv(params[:topic_set_1])
       set2 = ::DigestCampaigns.parse_topic_set_csv(params[:topic_set_2])
       set3 = ::DigestCampaigns.parse_topic_set_csv(params[:topic_set_3])
@@ -61,7 +66,11 @@ module Admin
       )
       c.save!
 
-      populate_queue_for_campaign!(c)
+      populate_queue_for_campaign!(
+        c,
+        exclude_recent_from_queue: exclude_recent,
+        exclude_recent_days: exclude_days
+      )
       c.update_columns(last_error: nil, last_populated_at: Time.zone.now, updated_at: Time.zone.now)
 
       test_result = test_email.present? ? send_test_now!(c, test_email) : nil
@@ -135,7 +144,18 @@ module Admin
     # Count how many rows the supplied selection_sql would return.
     def count_records
       sql = ::DigestCampaigns.validate_campaign_sql!(params.require(:selection_sql).to_s)
-      count = DB.query_single("SELECT COUNT(*) FROM (#{sql}) src").first.to_i
+
+      exclude_recent = truthy_param?(params[:exclude_recent_from_queue], default: true)
+      exclude_days = int_param?(params[:exclude_recent_from_queue_days], default: 1)
+      exclude_days = 0 if exclude_days < 0
+      exclude_days = 3650 if exclude_days > 3650
+
+      effective_sql = apply_recent_queue_exclusion(
+        sql,
+        exclude_recent_from_queue: exclude_recent,
+        exclude_recent_days: exclude_days
+      )
+      count = DB.query_single("SELECT COUNT(*) FROM (#{effective_sql}) src").first.to_i
       render_json_dump(ok: true, count: count)
     rescue => e
       render_json_error(e.message)
@@ -162,8 +182,13 @@ module Admin
       raise ArgumentError, "Invalid send_at datetime: #{s}"
     end
 
-    def populate_queue_for_campaign!(campaign)
+    def populate_queue_for_campaign!(campaign, exclude_recent_from_queue: true, exclude_recent_days: 1)
       sql = ::DigestCampaigns.validate_campaign_sql!(campaign.selection_sql)
+      sql = apply_recent_queue_exclusion(
+        sql,
+        exclude_recent_from_queue: exclude_recent_from_queue,
+        exclude_recent_days: exclude_recent_days
+      )
 
       DB.exec(<<~SQL, campaign_key: campaign.campaign_key.to_s, nb: campaign.send_at)
         INSERT INTO #{::DigestCampaigns::QUEUE_TABLE}
@@ -195,6 +220,54 @@ module Admin
           locked_at = NULL,
           updated_at = NOW()
       SQL
+    end
+
+    # Exclude users who have any queue record within the last N days.
+    # - For regular (non-delayed) queue rows (not_before IS NULL): exclude if created_at is within timeframe.
+    # - For delayed queue rows (not_before IS NOT NULL): exclude ONLY if actually sent within timeframe.
+    def apply_recent_queue_exclusion(selection_sql, exclude_recent_from_queue:, exclude_recent_days:)
+      return selection_sql unless exclude_recent_from_queue
+
+      days = exclude_recent_days.to_i
+      return selection_sql if days <= 0
+
+      cutoff = Time.zone.now - days.days
+
+      # Embed quoted timestamp safely.
+      cutoff_sql = ActiveRecord::Base.connection.quote(cutoff)
+
+      <<~SQL
+        WITH src AS (
+          #{selection_sql}
+        )
+        SELECT src.*
+        FROM src
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM #{::DigestCampaigns::QUEUE_TABLE} q
+          WHERE q.user_id = src.user_id::int
+            AND (
+              (q.not_before IS NULL AND q.created_at >= #{cutoff_sql})
+              OR
+              (q.not_before IS NOT NULL AND q.status = 'sent' AND q.sent_at IS NOT NULL AND q.sent_at >= #{cutoff_sql})
+            )
+        )
+      SQL
+    end
+
+    def truthy_param?(v, default: false)
+      return default if v.nil?
+      s = v.to_s.strip.downcase
+      return true if %w[1 true t yes y on].include?(s)
+      return false if %w[0 false f no n off].include?(s)
+      default
+    end
+
+    def int_param?(v, default: 0)
+      return default if v.nil?
+      Integer(v)
+    rescue
+      default
     end
 
     def send_test_now!(campaign, test_email)
