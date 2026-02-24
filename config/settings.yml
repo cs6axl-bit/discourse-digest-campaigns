@@ -1,0 +1,137 @@
+plugins:
+  digest_campaigns_enabled:
+    default: true
+    client: false
+    type: bool
+
+  digest_campaigns_poller_every_minutes:
+    default: 1
+    min: 1
+    max: 60
+    client: false
+    type: integer
+
+  digest_campaigns_claim_rows_per_run:
+    default: 2000
+    min: 1
+    max: 20000
+    client: false
+    type: integer
+
+  digest_campaigns_batch_chunk_size:
+    default: 25
+    min: 1
+    max: 500
+    client: false
+    type: integer
+
+  # For 50k in 3 hours: ~278/min. Use 300/min headroom.
+  digest_campaigns_target_per_minute:
+    default: 300
+    min: 1
+    max: 5000
+    client: false
+    type: integer
+
+  digest_campaigns_processing_stale_minutes:
+    default: 60
+    min: 5
+    max: 1440
+    client: false
+    type: integer
+
+  digest_campaigns_only_campaign_key:
+    default: ""
+    client: false
+    type: string
+
+  digest_campaigns_subject_prefix:
+    default: "[Campaign Digest]"
+    client: false
+    type: string
+
+  digest_campaigns_respect_digest_unsubscribe:
+    default: true
+    client: false
+    type: bool
+
+  # =========================================================
+  # NEW: Campaign-only excerpt trimming control
+  # =========================================================
+
+  digest_campaigns_trim_excerpts_enabled:
+    default: true
+    client: false
+    type: bool
+
+  # Number of first digest topics whose excerpts should NOT be trimmed.
+  # 0 = trim all topics
+  # 1 = trim all except first topic (DEFAULT)
+  # 2 = trim all except first 2 topics, etc.
+  digest_campaigns_trim_excerpts_ignore_first_n_topics:
+    default: 1
+    min: 0
+    max: 20
+    client: false
+    type: integer
+
+  # =========================================================
+  # NEW: Domain swapping (post-process, after all other logic)
+  # =========================================================
+
+  # If enabled, the plugin will replace the host of ALL http(s) links in the final email
+  # (HTML + text + unsubscribe) where the host matches the Discourse hostname.
+  digest_campaigns_domain_swap_enabled:
+    default: false
+    client: false
+    type: bool
+
+  # If enabled, swap link hosts inside the HTML part (href/src/etc.)
+  digest_campaigns_domain_swap_html_links_enabled:
+    default: true
+    client: false
+    type: bool
+
+  # If enabled, swap link hosts inside the text part
+  digest_campaigns_domain_swap_text_links_enabled:
+    default: true
+    client: false
+    type: bool
+
+  # If enabled, swap raw domain occurrences (not just URLs) in bodies/headers.
+  # This will also affect places like "@myhealthyhaven.org" in plain text.
+  digest_campaigns_domain_swap_everywhere_enabled:
+    default: false
+    client: false
+    type: bool
+
+  # If enabled, swap domains inside selected headers (List-Unsubscribe, etc.)
+  digest_campaigns_domain_swap_headers_enabled:
+    default: true
+    client: false
+    type: bool
+
+  # If enabled, also swap the domain part of the Message-ID header (<...@domain>)
+  digest_campaigns_domain_swap_message_id_enabled:
+    default: false
+    client: false
+    type: bool
+
+  # One or more target domains (hosts) to swap to.
+  # Supply comma / space / newline separated values. A random one is chosen per email.
+  # Example: "a.example.com,b.example.com"
+  digest_campaigns_domain_swap_targets:
+    default: ""
+    client: false
+    type: string
+
+  # =========================================================
+  # Debugging
+  # =========================================================
+
+  # If enabled, logs generated email_id + campaign_id for each campaign email to Rails log
+  # (visible in /logs). Use only while debugging.
+  digest_campaigns_email_id_debug_enabled:
+    default: false
+    client: false
+    type: bool
