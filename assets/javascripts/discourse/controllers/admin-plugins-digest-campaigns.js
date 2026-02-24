@@ -16,6 +16,10 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   @tracked send_at = ""; // datetime-local
   @tracked test_email = "";
 
+  // Exclude users who have queue rows in the last X days (on by default)
+  @tracked exclude_recent_from_queue = true;
+  @tracked exclude_recent_from_queue_days = 1;
+
   @tracked busy = false;
   @tracked error = "";
   @tracked notice = "";
@@ -31,7 +35,6 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
     this.notice = "";
   }
 
-
   formatTopicSets(topicSets) {
     const sets = Array.isArray(topicSets) ? topicSets : [];
     if (!sets.length) {
@@ -44,7 +47,6 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
       .filter((s) => s && s.length > 0)
       .join(" | ");
   }
-
 
   async refresh(page = null) {
     const p = page || this.meta?.page || 1;
@@ -124,7 +126,11 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
     try {
       const res = await ajax("/admin/digest-campaigns/count.json", {
         type: "POST",
-        data: { selection_sql: this.selection_sql },
+        data: {
+          selection_sql: this.selection_sql,
+          exclude_recent_from_queue: this.exclude_recent_from_queue,
+          exclude_recent_from_queue_days: this.exclude_recent_from_queue_days,
+        },
       });
       this.draftCount = res?.count;
       this.notice = `Query returned ${res?.count} record(s).`;
@@ -167,7 +173,9 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
       });
 
       const chosen = res?.test?.chosen_topic_ids?.join(",") || "";
-      this.notice = `Draft test sent to ${email}${chosen ? ` (topics: ${chosen})` : ""}.`;
+      this.notice = `Draft test sent to ${email}${
+        chosen ? ` (topics: ${chosen})` : ""
+      }.`;
     } catch (e) {
       this.error =
         e?.jqXHR?.responseJSON?.errors?.[0] ||
@@ -197,6 +205,8 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
         topic_set_2: this.topic_set_2,
         topic_set_3: this.topic_set_3,
         test_email: this.test_email,
+        exclude_recent_from_queue: this.exclude_recent_from_queue,
+        exclude_recent_from_queue_days: this.exclude_recent_from_queue_days,
       };
 
       if (this.send_at && this.send_at.trim().length > 0) {
@@ -214,6 +224,8 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
       this.topic_set_3 = "";
       this.send_at = "";
       this.test_email = "";
+      this.exclude_recent_from_queue = true;
+      this.exclude_recent_from_queue_days = 1;
 
       await this.refresh(1);
     } catch (e) {
