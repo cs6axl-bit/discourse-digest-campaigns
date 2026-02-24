@@ -179,10 +179,11 @@
                 <button class="btn btn-primary" {{on "click" (fn this.enableCampaign c.id)}} disabled={{this.busy}}>Enable</button>
               {{/if}}
 
+              {{!-- Default ON unless explicitly set to false --}}
               <label class="checkbox" style="display:inline-block; margin-left:10px;">
                 <Input
                   @type="checkbox"
-                  @checked={{get this.deleteQueuedOnDeleteById c.id}}
+                  @checked={{if (eq (get this.deleteQueuedOnDeleteById c.id) false) false true}}
                   {{on "change" (fn this.onDeleteQueuedToggle c.id)}}
                 />
                 delete queued rows
