@@ -1,3 +1,0 @@
-en:
-  site_settings:
-    digest_campaigns_email_id_debug_enabled: "Log campaign email_id debug lines (email_id + campaign_id) to /logs"
