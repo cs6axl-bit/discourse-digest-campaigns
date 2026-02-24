@@ -5,7 +5,6 @@ import { ajax } from "discourse/lib/ajax";
 
 export default class AdminPluginsDigestCampaignsController extends Controller {
   @tracked campaigns = [];
-
   @tracked meta = { page: 1, per_page: 30, total: 0, total_pages: 1 };
 
   @tracked campaign_key = "";
@@ -29,9 +28,7 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   @tracked notice = "";
 
   @tracked draftCount = null;
-
   @tracked showSqlById = {};
-
   @tracked testEmailById = {};
 
   clearMessages() {
@@ -44,7 +41,6 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
     if (!sets.length) {
       return "";
     }
-    // Example: "3782,1351,1423 | 99,101 | 555"
     return sets
       .map((s) => (Array.isArray(s) ? s : []).map((n) => String(n)).join(","))
       .filter((s) => s && s.length > 0)
@@ -105,9 +101,7 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   @action
   async goToPage(page) {
     const p = parseInt(page, 10);
-    if (!p || p <= 0) {
-      return;
-    }
+    if (!p || p <= 0) return;
 
     this.clearMessages();
     this.busy = true;
@@ -123,18 +117,14 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   @action
   async nextPage() {
     const p = (this.meta?.page || 1) + 1;
-    if (p > (this.meta?.total_pages || 1)) {
-      return;
-    }
+    if (p > (this.meta?.total_pages || 1)) return;
     await this.goToPage(p);
   }
 
   @action
   async prevPage() {
     const p = (this.meta?.page || 1) - 1;
-    if (p < 1) {
-      return;
-    }
+    if (p < 1) return;
     await this.goToPage(p);
   }
 
@@ -211,9 +201,7 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   async createCampaign() {
     this.clearMessages();
 
-    if (!confirm("Save this campaign and populate the send queue?")) {
-      return;
-    }
+    if (!confirm("Save this campaign and populate the send queue?")) return;
 
     this.busy = true;
 
@@ -294,14 +282,15 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   async deleteCampaign(id) {
     this.clearMessages();
 
-    const deleteQueued = !!this.deleteQueuedOnDeleteById?.[id];
+    // default-to-true if unset, so deleteQueued matches the checkbox behavior
+    const stored = this.deleteQueuedOnDeleteById?.[id];
+    const deleteQueued = stored === false ? false : true;
+
     const msg = deleteQueued
       ? "Delete this campaign? Queued rows will be removed; other statuses (sent/processing/failed/skipped) remain."
       : "Delete this campaign? No queue rows will be removed.";
 
-    if (!confirm(msg)) {
-      return;
-    }
+    if (!confirm(msg)) return;
 
     this.busy = true;
     try {
