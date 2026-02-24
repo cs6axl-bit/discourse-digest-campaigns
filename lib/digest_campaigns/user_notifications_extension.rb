@@ -437,14 +437,47 @@ module ::DigestCampaigns
       # ---- Message-ID header (FIX: value-only + in-place; supports Message-Id variants) ----
       begin
         if domain_swap_message_id_enabled? && message.respond_to?(:header) && message.header
-          hk = "Message-ID"
-          fields = message.header.fields.select { |f| f.name.to_s.casecmp?(hk) }
+          # IMPORTANT:
+          # Mail/ActionMailer can treat Message-ID specially (lazy generation / normalization).
+          # To prevent our swap from being overwritten, set BOTH:
+          #  - message.message_id (attribute)
+          #  - the actual header field value in-place
+
+          # Force generation if Mail hasn't created it yet
+          begin
+            _ = message.message_id
+          rescue
+            # ignore
+          end
+
+          # Accept common casings/variants
+          fields = message.header.fields.select do |f|
+            n = f.name.to_s
+            n.casecmp?("Message-ID") || n.casecmp?("Message-Id")
+          end
+
+          fields = [message.header["Message-ID"]].compact if fields.blank? && message.header["Message-ID"]
+
           fields.each do |f|
-            v = f.value.to_s
+            v = f.respond_to?(:value) ? f.value.to_s : f.to_s
             next if v.blank?
+
             out = swap_message_id_header_value(v, origin, target)
             next if out == v
-            f.value = out
+
+            # Set header field in-place
+            if f.respond_to?(:value=)
+              f.value = out
+            else
+              message.header["Message-ID"] = out
+            end
+
+            # Also set the attribute so later normalization doesn't revert it
+            begin
+              message.message_id = out
+            rescue
+              # ignore
+            end
           end
         end
       rescue => e
