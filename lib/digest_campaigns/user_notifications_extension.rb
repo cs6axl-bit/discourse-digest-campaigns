@@ -28,6 +28,22 @@ module ::DigestCampaigns
   #   - @counts = []
   # ============================================================
   module DigestAppendData
+
+
+    def self.html_campaign_logo_url
+  u = SiteSetting.digest_campaigns_html_logo_image_url.to_s.strip
+  return u if u.present?
+
+  candidates = []
+  candidates << SiteSetting.email_logo_url.to_s rescue nil
+  candidates << SiteSetting.logo_small_url.to_s rescue nil
+  candidates << SiteSetting.logo_url.to_s rescue nil
+
+  candidates.map! { |x| x.to_s.strip }
+  candidates.find { |x| x.present? } || ""
+end
+
+    
     ENABLE_LINK_REWRITE = true
 
     # Rewrite links inside post bodies (excerpts) to /content?u=<base64url(url)>
