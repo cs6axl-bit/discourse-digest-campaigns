@@ -1487,7 +1487,7 @@ HTML
           # unsubscribe block
           <<~HTML
             <div style="max-width: 600px; margin: 0 auto;">
-              #{logo_url.present? ? "<div style=\"text-align:center; padding: 10px 0;\"><a href=\"#{ERB::Util.html_escape(home_url)}\" style=\"text-decoration:none;\"><img src=\"#{ERB::Util.html_escape(logo_url)}\" alt=\"\" style=\"max-width: 220px; height: auto; border:0;\" /></a></div>" : ""}
+              #{logo_url.present? ? "<div style=\"text-align:center; padding: 10px 0;\"><a href=\"#{ERB::Util.html_escape(home_url)}\" style=\"text-decoration:none;\"><img src=\"#{ERB::Util.html_escape(logo_url)}\" alt=\"\" style=\"max-width: 250px; height: auto; border:0;\" /></a></div>" : ""}
               <hr style="border:0; border-top:1px solid #e6e6e6; margin: 10px 0;" />
               #{(ph1.present? || ph2.present?) ? "<div style=\"font-size: #{ph_font_size}px; color:#000; line-height: 1.4; padding: 6px 0; text-align:center;\">#{ph1.present? ? "<div>#{ERB::Util.html_escape(ph1)}</div>" : ""}#{ph2.present? ? "<div>#{ERB::Util.html_escape(ph2)}</div>" : ""}</div><hr style=\"border:0; border-top:1px solid #e6e6e6; margin: 10px 0;\" />" : ""}
               <div style="padding: 6px 0;">
