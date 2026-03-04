@@ -1,0 +1,4 @@
+en:
+  site_settings:
+    digest_campaigns_email_id_debug_enabled: "Log campaign email_id debug lines (email_id + campaign_id) to /logs"
+    digest_campaigns_update_digest_attempted_at_on_send: "After campaign send, also set user_stats.digest_attempted_at to now (treat as digest attempt)"
