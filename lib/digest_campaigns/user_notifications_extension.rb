@@ -246,7 +246,7 @@ module ::DigestCampaigns
 
         final_dest =
           if ENABLE_APPEND_TRACKING_PARAMS_TO_POST_BODY_LINKS
-            append_tracking_params(abs0, user.id, "", email_id)
+            append_tracking_params(abs0, user.id, "99999", email_id)
           else
             abs0
           end
