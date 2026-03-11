@@ -185,3 +185,19 @@ plugins:
     default: false
     client: false
     type: bool
+
+  digest_campaigns_max_send_attempts:
+    default: 3
+    min: 1
+    max: 20
+    client: false
+    type: integer
+
+  # Delay before retrying a failed send attempt.
+  digest_campaigns_retry_delay_minutes:
+    default: 5
+    min: 0
+    max: 10080
+    client: false
+    type: integer
+    
