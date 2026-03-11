@@ -26,14 +26,14 @@ module Jobs
         end
 
         row = DB.query_single(<<~SQL, id: qid)
-          SELECT id, campaign_key, user_id, chosen_topic_ids, status
+          SELECT id, campaign_key, user_id, chosen_topic_ids, status, attempts
           FROM #{::DigestCampaigns::QUEUE_TABLE}
           WHERE id = :id
           LIMIT 1
         SQL
         next if row.blank?
 
-        id, campaign_key, user_id, chosen_topic_ids, status = row
+        id, campaign_key, user_id, chosen_topic_ids, status, attempts = row
         next unless status == "processing"
 
         user = User.find_by(id: user_id)
@@ -83,7 +83,7 @@ module Jobs
               user,
               campaign_topic_ids: chosen_topic_ids,
               campaign_key: campaign_key.to_s,
-              campaign_id: campaign.id,          # ✅ NEW: used for email_id generation
+              campaign_id: campaign.id,
               campaign_since: campaign.send_at,
               campaign_custom_html_body: (has_custom_html ? campaign.custom_html_body : nil),
               campaign_preheader_line_1: (has_custom_html ? campaign.preheader_line_1 : nil),
@@ -96,8 +96,6 @@ module Jobs
           Email::Sender.new(message, :digest).send
           Discourse.redis.incr(rate_key)
 
-          # Optional: treat a campaign send like a digest "attempt" so the user doesn't
-          # immediately become eligible again for core digests.
           if SiteSetting.digest_campaigns_update_digest_attempted_at_on_send
             begin
               us = user.user_stat
@@ -119,7 +117,7 @@ module Jobs
             WHERE id = :id
           SQL
         rescue => e
-          mark_failed(id, "#{e.class}: #{e.message}")
+          retry_or_fail_send(id, attempts, e)
         end
       end
     end
@@ -175,6 +173,37 @@ module Jobs
         WHERE id IN (:ids)
           AND status = 'processing'
       SQL
+    end
+
+    def retry_or_fail_send(id, attempts, exception)
+      attempts = attempts.to_i
+      err = "#{exception.class}: #{exception.message}"
+
+      max_attempts = SiteSetting.digest_campaigns_max_send_attempts.to_i
+      max_attempts = 1 if max_attempts <= 0
+
+      retry_delay_minutes = SiteSetting.digest_campaigns_retry_delay_minutes.to_i
+      retry_delay_minutes = 0 if retry_delay_minutes < 0
+
+      if attempts < max_attempts
+        note = "Attempt #{attempts}/#{max_attempts} failed: #{err}"
+
+        DB.exec(<<~SQL, id: id, note: note, retry_at: Time.zone.now + retry_delay_minutes.minutes)
+          UPDATE #{::DigestCampaigns::QUEUE_TABLE}
+          SET status = 'queued',
+              locked_at = NULL,
+              not_before = :retry_at,
+              updated_at = NOW(),
+              last_error = COALESCE(last_error, '') || CASE
+                WHEN COALESCE(last_error, '') = '' THEN :note
+                ELSE E'\n' || :note
+              END
+          WHERE id = :id
+            AND status = 'processing'
+        SQL
+      else
+        mark_failed(id, "Final attempt #{attempts}/#{max_attempts} failed: #{err}")
+      end
     end
 
     def mark_failed(id, err)
