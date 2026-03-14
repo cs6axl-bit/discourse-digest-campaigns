@@ -1430,7 +1430,7 @@ unsub_link_text = "Unsubscribe" if unsub_link_text.blank?
 
 unsub_html = <<~HTML
   <div style="font-size:12px; line-height:1.4; padding: 10px 0; text-align:center;">
-    #{ERB::Util.html_escape(unsub_text)} <a href="#{ERB::Util.html_escape(unsub_url)}" style="font-size:12px; text-decoration:underline; font-weight:normal;">#{ERB::Util.html_escape(unsub_link_text)}</a>
+    #{ERB::Util.html_escape(unsub_text)} <a href="#{ERB::Util.html_escape(unsub_url)}" style="text-decoration:underline; font-weight:normal;">#{ERB::Util.html_escape(unsub_link_text)}</a>
   </div>
 HTML
 
