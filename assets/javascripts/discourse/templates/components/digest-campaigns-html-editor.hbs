@@ -1,0 +1,12 @@
+<div {{did-insert this.setup}}>
+  <Textarea
+    @value={{@value}}
+    class="input-xxlarge"
+    rows={{@rows}}
+    placeholder={{@placeholder}}
+    {{on "input" this.onInput}}
+  />
+  <div class="help-block" style="margin-top:6px;">
+    If you load TinyMCE globally (<code>window.tinymce</code>) this field becomes a WYSIWYG editor. Otherwise it stays a plain HTML textarea.
+  </div>
+</div>
