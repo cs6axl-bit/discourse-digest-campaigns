@@ -107,6 +107,7 @@ after_initialize do
       post   "/digest-campaigns/test-draft.json" => "digest_campaigns#test_draft"
       post   "/digest-campaigns/count.json" => "digest_campaigns#count_records"
       get    "/digest-campaigns/hardsale-email-html/:id.json" => "digest_campaigns#hardsale_email_html"
+      get    "/digest-campaigns/bundle-email/:id.json" => "digest_campaigns#bundle_email_html"
       delete "/digest-campaigns/:id.json" => "digest_campaigns#destroy"
     end
 
@@ -115,7 +116,6 @@ after_initialize do
   end
 
   require_relative "app/models/digest_campaigns/campaign"
-  require_relative "lib/digest_campaigns/aiwrite_hardsale_service"
   require_relative "app/jobs/scheduled/digest_campaign_poller"
   require_relative "app/jobs/regular/digest_campaign_send_batch"
   require_relative "app/controllers/admin/digest_campaigns_controller"

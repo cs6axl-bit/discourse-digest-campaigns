@@ -13,34 +13,10 @@ module Admin
       per_page = PER_PAGE
       offset = (page - 1) * per_page
 
-      scope = DigestCampaigns::Campaign.all
+      total = DigestCampaigns::Campaign.count
+      total_pages = (total.to_f / per_page).ceil
 
-      # Server-side search by campaign_key substring
-      search = params[:search].to_s.strip
-      if search.present?
-        scope = scope.where("campaign_key ILIKE ?", "%#{search}%")
-      end
-
-      # Hide hardsale_topic_ campaigns
-      if truthy_param?(params[:hide_hardsale], default: false)
-        scope = scope.where("campaign_key NOT ILIKE 'hardsale\\_topic\\_%'")
-      end
-
-      # Date range filter on created_at
-      if params[:created_after].present?
-        after = Time.zone.parse(params[:created_after].to_s) rescue nil
-        scope = scope.where("created_at >= ?", after) if after
-      end
-      if params[:created_before].present?
-        before = Time.zone.parse(params[:created_before].to_s) rescue nil
-        # include the full "before" day by going to end of day
-        scope = scope.where("created_at <= ?", before.end_of_day) if before
-      end
-
-      total = scope.count
-      total_pages = [(total.to_f / per_page).ceil, 1].max
-
-      rows = scope.order("created_at DESC").limit(per_page).offset(offset).map do |c|
+      rows = DigestCampaigns::Campaign.order("created_at DESC").limit(per_page).offset(offset).map do |c|
         c.as_json.merge(
           queued_count: queue_count(c.campaign_key, "queued"),
           processing_count: queue_count(c.campaign_key, "processing"),
@@ -281,6 +257,57 @@ module Admin
           subject_line_1: subjects[0],
           subject_line_2: subjects[1],
           subject_line_3: subjects[2],
+          preheader_line_1: preheaders[0],
+          preheader_line_2: preheaders[1],
+          custom_html_body: html_full.to_s
+        }
+      )
+    rescue Discourse::NotFound
+      raise
+    rescue => e
+      render_json_error(e.message)
+    end
+
+    # Load subjects, preheaders, and full HTML from aiwrites_hardsale_bundle_emails by id.
+    # The bundle table is written by Test100_hardsale_multi_product_email and contains
+    # multi-product emails; columns map identically to the single-product table.
+    def bundle_email_html
+      id = params.require(:id).to_i
+      raise Discourse::InvalidParameters.new(:id) if id <= 0
+
+      row = DB.query_single(<<~SQL, id: id)
+        SELECT
+          id,
+          subject_titles_json,
+          preheaders_json,
+          preheader,
+          html_full
+        FROM aiwrites_hardsale_bundle_emails
+        WHERE id = :id
+        LIMIT 1
+      SQL
+
+      raise Discourse::NotFound unless row.present?
+
+      record_id, subject_titles_json, preheaders_json, legacy_preheader, html_full = row
+
+      subjects  = parse_json_string_array(subject_titles_json)
+      preheaders = parse_json_string_array(preheaders_json)
+
+      if preheaders.blank? && legacy_preheader.present?
+        preheaders = [legacy_preheader.to_s]
+      end
+
+      subjects   = normalize_fixed_length_array(subjects,   3)
+      preheaders = normalize_fixed_length_array(preheaders, 2)
+
+      render_json_dump(
+        ok: true,
+        source: {
+          id:               record_id.to_i,
+          subject_line_1:   subjects[0],
+          subject_line_2:   subjects[1],
+          subject_line_3:   subjects[2],
           preheader_line_1: preheaders[0],
           preheader_line_2: preheaders[1],
           custom_html_body: html_full.to_s

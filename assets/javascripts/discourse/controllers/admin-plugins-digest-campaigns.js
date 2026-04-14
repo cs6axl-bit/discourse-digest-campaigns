@@ -20,6 +20,7 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   @tracked preheader_line_2 = "";
   @tracked custom_html_body = "";
   @tracked hardsale_email_html_id = "";
+  @tracked bundle_email_id = "";
 
   // Subject variants (optional; random per recipient)
   @tracked subject_line_1 = "";
@@ -33,12 +34,6 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   // Per-campaign delete behavior (checkbox next to Delete)
   // Default ON when a campaign first appears in the list.
   @tracked deleteQueuedOnDeleteById = {};
-
-  // Existing campaigns table filters
-  @tracked hideHardsale = true;
-  @tracked campaignSearch = "";
-  @tracked createdAfter = "";
-  @tracked createdBefore = "";
 
   @tracked busy = false;
   @tracked error = "";
@@ -101,6 +96,49 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
     }
   }
 
+  @action
+  onBundleEmailIdInput(event) {
+    this.bundle_email_id = event?.target?.value || "";
+  }
+
+  @action
+  async loadFromBundleEmail() {
+    this.clearMessages();
+
+    const rawId = (this.bundle_email_id || "").trim();
+    if (!rawId) {
+      this.error = "Enter an aiwrites_hardsale_bundle_emails id first.";
+      return;
+    }
+
+    const id = Number.parseInt(rawId, 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      this.error = "Bundle email id must be a positive integer.";
+      return;
+    }
+
+    this.busy = true;
+    try {
+      const res = await ajax(`/admin/digest-campaigns/bundle-email/${id}.json`);
+      const src = res?.source || {};
+
+      this.subject_line_1 = src.subject_line_1 || "";
+      this.subject_line_2 = src.subject_line_2 || "";
+      this.subject_line_3 = src.subject_line_3 || "";
+      this.preheader_line_1 = src.preheader_line_1 || "";
+      this.preheader_line_2 = src.preheader_line_2 || "";
+      this.custom_html_body = src.custom_html_body || "";
+
+      this.notice = `Loaded subjects, preheaders, and HTML from aiwrites_hardsale_bundle_emails id=${id}.`;
+    } catch (e) {
+      this.error =
+        e?.jqXHR?.responseJSON?.errors?.[0] ||
+        e?.message ||
+        "Failed to load from aiwrites_hardsale_bundle_emails";
+    } finally {
+      this.busy = false;
+    }
+  }
 
   formatTopicSets(topicSets) {
     const sets = Array.isArray(topicSets) ? topicSets : [];
@@ -115,13 +153,7 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
 
   async refresh(page = null) {
     const p = page || this.meta?.page || 1;
-    const params = new URLSearchParams({ page: p });
-    if (this.hideHardsale) params.set("hide_hardsale", "true");
-    if (this.campaignSearch.trim()) params.set("search", this.campaignSearch.trim());
-    if (this.createdAfter) params.set("created_after", this.createdAfter);
-    if (this.createdBefore) params.set("created_before", this.createdBefore);
-
-    const res = await ajax(`/admin/digest-campaigns.json?${params.toString()}`);
+    const res = await ajax(`/admin/digest-campaigns.json?page=${p}`);
     this.campaigns = res.campaigns || [];
     this.meta = res.meta || { page: p, per_page: 30, total: 0, total_pages: 1 };
 
@@ -133,51 +165,6 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
       }
     }
     this.deleteQueuedOnDeleteById = next;
-  }
-
-  @action
-  onCampaignSearchInput(event) {
-    this.campaignSearch = event?.target?.value || "";
-  }
-
-  @action
-  onCreatedAfterInput(event) {
-    this.createdAfter = event?.target?.value || "";
-  }
-
-  @action
-  onCreatedBeforeInput(event) {
-    this.createdBefore = event?.target?.value || "";
-  }
-
-  @action
-  async applyFilters() {
-    this.clearMessages();
-    this.busy = true;
-    try {
-      await this.refresh(1);
-    } catch (e) {
-      this.error = e?.message || "Filter failed";
-    } finally {
-      this.busy = false;
-    }
-  }
-
-  @action
-  async clearFilters() {
-    this.campaignSearch = "";
-    this.createdAfter = "";
-    this.createdBefore = "";
-    this.hideHardsale = true;
-    this.clearMessages();
-    this.busy = true;
-    try {
-      await this.refresh(1);
-    } catch (e) {
-      this.error = e?.message || "Refresh failed";
-    } finally {
-      this.busy = false;
-    }
   }
 
   @action
@@ -368,6 +355,7 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
       this.preheader_line_2 = "";
       this.custom_html_body = "";
       this.hardsale_email_html_id = "";
+      this.bundle_email_id = "";
       this.exclude_recent_from_queue = true;
       this.exclude_recent_from_queue_days = 1;
 
