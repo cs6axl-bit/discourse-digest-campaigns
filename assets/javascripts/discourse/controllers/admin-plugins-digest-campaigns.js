@@ -35,6 +35,12 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   // Default ON when a campaign first appears in the list.
   @tracked deleteQueuedOnDeleteById = {};
 
+  // Existing campaigns table filters
+  @tracked hideHardsale = true;
+  @tracked campaignSearch = "";
+  @tracked createdAfter = "";
+  @tracked createdBefore = "";
+
   @tracked busy = false;
   @tracked error = "";
   @tracked notice = "";
@@ -153,7 +159,12 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
 
   async refresh(page = null) {
     const p = page || this.meta?.page || 1;
-    const res = await ajax(`/admin/digest-campaigns.json?page=${p}`);
+    const params = new URLSearchParams({ page: p });
+    if (this.hideHardsale) params.set("hide_hardsale", "true");
+    if (this.campaignSearch.trim()) params.set("search", this.campaignSearch.trim());
+    if (this.createdAfter) params.set("created_after", this.createdAfter);
+    if (this.createdBefore) params.set("created_before", this.createdBefore);
+    const res = await ajax(`/admin/digest-campaigns.json?${params.toString()}`);
     this.campaigns = res.campaigns || [];
     this.meta = res.meta || { page: p, per_page: 30, total: 0, total_pages: 1 };
 
@@ -165,6 +176,51 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
       }
     }
     this.deleteQueuedOnDeleteById = next;
+  }
+
+  @action
+  onCampaignSearchInput(event) {
+    this.campaignSearch = event?.target?.value || "";
+  }
+
+  @action
+  onCreatedAfterInput(event) {
+    this.createdAfter = event?.target?.value || "";
+  }
+
+  @action
+  onCreatedBeforeInput(event) {
+    this.createdBefore = event?.target?.value || "";
+  }
+
+  @action
+  async applyFilters() {
+    this.clearMessages();
+    this.busy = true;
+    try {
+      await this.refresh(1);
+    } catch (e) {
+      this.error = e?.message || "Filter failed";
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  @action
+  async clearFilters() {
+    this.campaignSearch = "";
+    this.createdAfter = "";
+    this.createdBefore = "";
+    this.hideHardsale = true;
+    this.clearMessages();
+    this.busy = true;
+    try {
+      await this.refresh(1);
+    } catch (e) {
+      this.error = e?.message || "Refresh failed";
+    } finally {
+      this.busy = false;
+    }
   }
 
   @action
