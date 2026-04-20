@@ -74,6 +74,22 @@ plugins:
     client: false
     type: string
 
+  # Font size (px) for the unsubscribe block general text
+  digest_campaigns_unsubscribe_font_size:
+    default: 12
+    min: 8
+    max: 40
+    client: false
+    type: integer
+
+  # Font size (px) for the unsubscribe link text only
+  digest_campaigns_unsubscribe_link_font_size:
+    default: 12
+    min: 8
+    max: 40
+    client: false
+    type: integer
+
   # NEW: HTML campaign preheader font size (in px)
   # Applies to the optional 1-2 preheader lines shown above the HTML body.
   digest_campaigns_html_preheader_font_size:
