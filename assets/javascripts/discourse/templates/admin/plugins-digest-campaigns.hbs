@@ -163,6 +163,18 @@
           </button>
         </div>
 
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">
+          <Input
+            @value={{this.vsl2html_email_id}}
+            class="input-medium"
+            placeholder="vsl2html_email_outputs id"
+            {{on "input" this.onVsl2htmlEmailIdInput}}
+          />
+          <button class="btn" {{on "click" this.loadFromVsl2htmlEmail}} disabled={{this.busy}}>
+            Load from vsl2html email id
+          </button>
+        </div>
+
         <DigestCampaignsHtmlEditor
           @value={{this.custom_html_body}}
           @rows={{12}}
@@ -170,7 +182,7 @@
           @onChange={{this.onCustomHtmlChange}}
         />
         <div class="help-block">
-          Enter an <code>aiwrites_hardsale_email_htmls</code> id or an <code>aiwrites_hardsale_bundle_emails</code> id to auto-load subject_line_1..3, preheader_line_1..2, and custom_html_body.
+          Enter an aiwrites_hardsale_email_htmls id to auto-load subject_line_1..3, preheader_line_1..2, and custom_html_body.
         </div>
         <div class="help-block">
           Email format: logo → divider → (optional preheader lines) → divider → your HTML → divider → Discourse unsubscribe.
@@ -214,6 +226,53 @@
   <hr>
 
   <h2>Existing Campaigns</h2>
+
+  <div style="margin: 8px 0 14px; display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;">
+    <label class="checkbox" style="display:inline-flex; align-items:center; gap:6px; margin:0; align-self:center;">
+      <Input @type="checkbox" @checked={{this.hideHardsale}} />
+      Hide <code>hardsale_topic_</code> campaigns
+    </label>
+
+    <div style="display:flex; flex-direction:column; gap:3px;">
+      <label style="font-size:12px; color:#666;">Search name</label>
+      <input
+        class="input-xlarge"
+        placeholder="Search by campaign name…"
+        value={{this.campaignSearch}}
+        {{on "input" this.onCampaignSearchInput}}
+        {{on "keydown" (fn (mut this._searchKeydown))}}
+      />
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:3px;">
+      <label style="font-size:12px; color:#666;">Created after</label>
+      <input
+        type="date"
+        class="input-medium"
+        value={{this.createdAfter}}
+        {{on "input" this.onCreatedAfterInput}}
+      />
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:3px;">
+      <label style="font-size:12px; color:#666;">Created before</label>
+      <input
+        type="date"
+        class="input-medium"
+        value={{this.createdBefore}}
+        {{on "input" this.onCreatedBeforeInput}}
+      />
+    </div>
+
+    <div style="display:flex; gap:8px; align-self:flex-end;">
+      <button class="btn btn-primary" {{on "click" this.applyFilters}} disabled={{this.busy}}>
+        Apply
+      </button>
+      <button class="btn" {{on "click" this.clearFilters}} disabled={{this.busy}}>
+        Clear
+      </button>
+    </div>
+  </div>
 
   <div style="margin: 8px 0;">
     <button class="btn" {{on "click" this.prevPage}} disabled={{or this.busy (lte this.meta.page 1)}}>

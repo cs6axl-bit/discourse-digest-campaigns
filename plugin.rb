@@ -108,6 +108,7 @@ after_initialize do
       post   "/digest-campaigns/count.json" => "digest_campaigns#count_records"
       get    "/digest-campaigns/hardsale-email-html/:id.json" => "digest_campaigns#hardsale_email_html"
       get    "/digest-campaigns/bundle-email/:id.json" => "digest_campaigns#bundle_email_html"
+      get    "/digest-campaigns/vsl2html-email/:id.json" => "digest_campaigns#vsl2html_email_html"
       delete "/digest-campaigns/:id.json" => "digest_campaigns#destroy"
     end
 

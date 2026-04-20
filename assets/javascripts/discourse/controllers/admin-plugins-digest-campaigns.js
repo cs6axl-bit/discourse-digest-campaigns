@@ -21,6 +21,7 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   @tracked custom_html_body = "";
   @tracked hardsale_email_html_id = "";
   @tracked bundle_email_id = "";
+  @tracked vsl2html_email_id = "";
 
   // Subject variants (optional; random per recipient)
   @tracked subject_line_1 = "";
@@ -105,6 +106,50 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   @action
   onBundleEmailIdInput(event) {
     this.bundle_email_id = event?.target?.value || "";
+  }
+
+  @action
+  onVsl2htmlEmailIdInput(event) {
+    this.vsl2html_email_id = event?.target?.value || "";
+  }
+
+  @action
+  async loadFromVsl2htmlEmail() {
+    this.clearMessages();
+
+    const rawId = (this.vsl2html_email_id || "").trim();
+    if (!rawId) {
+      this.error = "Enter a vsl2html_email_outputs id first.";
+      return;
+    }
+
+    const id = Number.parseInt(rawId, 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      this.error = "VSL2HTML email id must be a positive integer.";
+      return;
+    }
+
+    this.busy = true;
+    try {
+      const res = await ajax(`/admin/digest-campaigns/vsl2html-email/${id}.json`);
+      const src = res?.source || {};
+
+      this.subject_line_1 = src.subject_line_1 || "";
+      this.subject_line_2 = src.subject_line_2 || "";
+      this.subject_line_3 = src.subject_line_3 || "";
+      this.preheader_line_1 = src.preheader_line_1 || "";
+      this.preheader_line_2 = src.preheader_line_2 || "";
+      this.custom_html_body = src.custom_html_body || "";
+
+      this.notice = `Loaded subjects, preheaders, and HTML from vsl2html_email_outputs id=${id}.`;
+    } catch (e) {
+      this.error =
+        e?.jqXHR?.responseJSON?.errors?.[0] ||
+        e?.message ||
+        "Failed to load from vsl2html_email_outputs";
+    } finally {
+      this.busy = false;
+    }
   }
 
   @action
@@ -412,6 +457,7 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
       this.custom_html_body = "";
       this.hardsale_email_html_id = "";
       this.bundle_email_id = "";
+      this.vsl2html_email_id = "";
       this.exclude_recent_from_queue = true;
       this.exclude_recent_from_queue_days = 1;
 
