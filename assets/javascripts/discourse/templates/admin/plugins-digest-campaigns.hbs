@@ -195,7 +195,7 @@
       <div class="controls">
         <Input @value={{this.send_at}} @type="datetime-local" class="input-large" />
         <div class="help-block">
-          If set, queued rows won’t send until this time.
+          If set, queued rows won't send until this time.
         </div>
       </div>
     </div>
@@ -240,7 +240,7 @@
         placeholder="Search by campaign name…"
         value={{this.campaignSearch}}
         {{on "input" this.onCampaignSearchInput}}
-        {{on "keydown" (fn (mut this._searchKeydown))}}
+        {{on "keydown" this.onSearchKeydown}}
       />
     </div>
 

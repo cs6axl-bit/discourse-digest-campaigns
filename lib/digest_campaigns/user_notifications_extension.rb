@@ -1416,39 +1416,39 @@ module ::DigestCampaigns
           hostname = Discourse.current_hostname.to_s
 
           unsub_text = ""
-unsub_link_text = "Unsubscribe"
+          unsub_link_text = "Unsubscribe"
 
-if SiteSetting.respond_to?(:digest_campaigns_html_unsubscribe_text)
-  unsub_text = SiteSetting.digest_campaigns_html_unsubscribe_text.to_s.strip
-end
-if SiteSetting.respond_to?(:digest_campaigns_html_unsubscribe_link_text)
-  unsub_link_text = SiteSetting.digest_campaigns_html_unsubscribe_link_text.to_s.strip
-end
+          if SiteSetting.respond_to?(:digest_campaigns_html_unsubscribe_text)
+            unsub_text = SiteSetting.digest_campaigns_html_unsubscribe_text.to_s.strip
+          end
+          if SiteSetting.respond_to?(:digest_campaigns_html_unsubscribe_link_text)
+            unsub_link_text = SiteSetting.digest_campaigns_html_unsubscribe_link_text.to_s.strip
+          end
 
-unsub_text = "To stop receiving these emails, click:" if unsub_text.blank?
-unsub_link_text = "Unsubscribe" if unsub_link_text.blank?
+          unsub_text = "To stop receiving these emails, click:" if unsub_text.blank?
+          unsub_link_text = "Unsubscribe" if unsub_link_text.blank?
 
-unsub_font_size = 12
-begin
-  v = SiteSetting.digest_campaigns_unsubscribe_font_size.to_i
-  unsub_font_size = v if v >= 8 && v <= 40
-rescue
-  unsub_font_size = 12
-end
+          unsub_font_size = 12
+          begin
+            v = SiteSetting.digest_campaigns_unsubscribe_font_size.to_i
+            unsub_font_size = v if v >= 8 && v <= 40
+          rescue
+            unsub_font_size = 12
+          end
 
-unsub_link_font_size = 12
-begin
-  v = SiteSetting.digest_campaigns_unsubscribe_link_font_size.to_i
-  unsub_link_font_size = v if v >= 8 && v <= 40
-rescue
-  unsub_link_font_size = 12
-end
+          unsub_link_font_size = 12
+          begin
+            v = SiteSetting.digest_campaigns_unsubscribe_link_font_size.to_i
+            unsub_link_font_size = v if v >= 8 && v <= 40
+          rescue
+            unsub_link_font_size = 12
+          end
 
-unsub_html = <<~HTML
-  <div style="font-size:#{unsub_font_size}px; line-height:1.4; padding: 10px 0; text-align:center;">
-    #{ERB::Util.html_escape(unsub_text)} <a href="#{ERB::Util.html_escape(unsub_url)}" style="font-size:#{unsub_link_font_size}px; text-decoration:underline; font-weight:normal;">#{ERB::Util.html_escape(unsub_link_text)}</a>
-  </div>
-HTML
+          unsub_html = <<~HTML
+            <div style="line-height:1.4; padding: 10px 0; text-align:center;">
+              <span style="font-size:#{unsub_font_size}px;">#{ERB::Util.html_escape(unsub_text)}</span> <a href="#{ERB::Util.html_escape(unsub_url)}" style="font-size:#{unsub_link_font_size}px; text-decoration:underline; font-weight:normal;">#{ERB::Util.html_escape(unsub_link_text)}</a>
+            </div>
+          HTML
 
           # Logo URL selection:
           # 1) explicit override via SiteSetting.digest_campaigns_html_logo_image_url
@@ -1527,7 +1527,6 @@ HTML
               <div style="padding: 6px 0;">
                 #{custom_html_body}
               </div>
-              <br>
               <hr style="border:0; border-top:1px solid #e6e6e6; margin: 10px 0;" />
               #{unsub_html}
             </div>

@@ -116,7 +116,7 @@ after_initialize do
     # (Previously: get "/admin/digest-campaigns" => redirect("/admin/plugins/digest-campaigns"))
   end
 
-  require_relative "lib/digest_campaigns/aiwrite_hardsale_service"
+  require_relative "lib/digest_campaigns/aiwrite_hardsale_service" if File.exist?(File.join(__dir__, "lib/digest_campaigns/aiwrite_hardsale_service.rb"))
   require_relative "app/models/digest_campaigns/campaign"
   require_relative "app/jobs/scheduled/digest_campaign_poller"
   require_relative "app/jobs/regular/digest_campaign_send_batch"

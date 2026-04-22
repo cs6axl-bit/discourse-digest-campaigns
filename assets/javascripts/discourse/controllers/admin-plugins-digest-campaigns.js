@@ -239,6 +239,13 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   }
 
   @action
+  onSearchKeydown(event) {
+    if (event.key === "Enter") {
+      this.applyFilters();
+    }
+  }
+
+  @action
   async applyFilters() {
     this.clearMessages();
     this.busy = true;

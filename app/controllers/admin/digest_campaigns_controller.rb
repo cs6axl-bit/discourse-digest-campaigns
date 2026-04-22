@@ -13,10 +13,36 @@ module Admin
       per_page = PER_PAGE
       offset = (page - 1) * per_page
 
-      total = DigestCampaigns::Campaign.count
-      total_pages = (total.to_f / per_page).ceil
+      scope = DigestCampaigns::Campaign.all
 
-      rows = DigestCampaigns::Campaign.order("created_at DESC").limit(per_page).offset(offset).map do |c|
+      if truthy_param?(params[:hide_hardsale], default: false)
+        scope = scope.where("campaign_key NOT LIKE 'hardsale_topic_%'")
+      end
+
+      if (search = params[:search].to_s.strip).present?
+        scope = scope.where("campaign_key ILIKE ?", "%#{search}%")
+      end
+
+      if (after = params[:created_after].to_s.strip).present?
+        begin
+          scope = scope.where("created_at >= ?", Time.zone.parse(after).beginning_of_day)
+        rescue ArgumentError
+          # ignore invalid date
+        end
+      end
+
+      if (before_date = params[:created_before].to_s.strip).present?
+        begin
+          scope = scope.where("created_at <= ?", Time.zone.parse(before_date).end_of_day)
+        rescue ArgumentError
+          # ignore invalid date
+        end
+      end
+
+      total = scope.count
+      total_pages = [(total.to_f / per_page).ceil, 1].max
+
+      rows = scope.order("created_at DESC").limit(per_page).offset(offset).map do |c|
         c.as_json.merge(
           queued_count: queue_count(c.campaign_key, "queued"),
           processing_count: queue_count(c.campaign_key, "processing"),
@@ -297,45 +323,6 @@ module Admin
       if preheaders.blank? && legacy_preheader.present?
         preheaders = [legacy_preheader.to_s]
       end
-
-      subjects   = normalize_fixed_length_array(subjects,   3)
-      preheaders = normalize_fixed_length_array(preheaders, 2)
-
-      render_json_dump(
-        ok: true,
-        source: {
-          id:               record_id.to_i,
-          subject_line_1:   subjects[0],
-          subject_line_2:   subjects[1],
-          subject_line_3:   subjects[2],
-          preheader_line_1: preheaders[0],
-          preheader_line_2: preheaders[1],
-          custom_html_body: html_full.to_s
-        }
-      )
-    rescue Discourse::NotFound
-      raise
-    rescue => e
-      render_json_error(e.message)
-    end
-
-    def vsl2html_email_html
-      id = params.require(:id).to_i
-      raise Discourse::InvalidParameters.new(:id) if id <= 0
-
-      row = DB.query_single(<<~SQL, id: id)
-        SELECT id, subject_titles_json, preheaders_json, html_full
-        FROM vsl2html_email_outputs
-        WHERE id = :id
-        LIMIT 1
-      SQL
-
-      raise Discourse::NotFound unless row.present?
-
-      record_id, subject_titles_json, preheaders_json, html_full = row
-
-      subjects   = parse_json_string_array(subject_titles_json)
-      preheaders = parse_json_string_array(preheaders_json)
 
       subjects   = normalize_fixed_length_array(subjects,   3)
       preheaders = normalize_fixed_length_array(preheaders, 2)
