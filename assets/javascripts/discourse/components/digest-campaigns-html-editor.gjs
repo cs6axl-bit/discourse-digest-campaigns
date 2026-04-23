@@ -1,5 +1,6 @@
 import Component from "@glimmer/component";
 import { action } from "@ember/object";
+import { Textarea } from "@ember/component";
 import { on } from "@ember/modifier";
 import didInsert from "@ember/render-modifiers/modifiers/did-insert";
 
