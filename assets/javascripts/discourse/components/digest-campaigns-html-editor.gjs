@@ -1,10 +1,8 @@
 import Component from "@glimmer/component";
 import { action } from "@ember/object";
+import { on } from "@ember/modifier";
+import didInsert from "@ember/render-modifiers/modifiers/did-insert";
 
-// TinyMCE is NOT bundled with Discourse core.
-// If you load TinyMCE globally (window.tinymce) via your own theme/component,
-// this component will auto-initialize it. Otherwise it gracefully falls back
-// to a plain textarea.
 export default class DigestCampaignsHtmlEditor extends Component {
   @action
   onInput(event) {
@@ -22,11 +20,9 @@ export default class DigestCampaignsHtmlEditor extends Component {
       const tinymce = window?.tinymce;
       if (!tinymce || typeof tinymce.init !== "function") return;
 
-      // Avoid double-init
       if (textarea.dataset?.tinymceInited === "1") return;
       textarea.dataset.tinymceInited = "1";
 
-      // Give it a stable id for TinyMCE selector
       if (!textarea.id) {
         textarea.id = `dc_html_${Math.random().toString(16).slice(2)}`;
       }
@@ -49,9 +45,23 @@ export default class DigestCampaignsHtmlEditor extends Component {
         },
       });
     } catch (e) {
-      // Fallback: leave textarea as-is
       // eslint-disable-next-line no-console
       console.warn("digest-campaigns TinyMCE init failed", e);
     }
   }
+
+  <template>
+    <div {{didInsert this.setup}}>
+      <Textarea
+        @value={{@value}}
+        class="input-xxlarge"
+        rows={{@rows}}
+        placeholder={{@placeholder}}
+        {{on "input" this.onInput}}
+      />
+      <div class="help-block" style="margin-top:6px;">
+        If you load TinyMCE globally (<code>window.tinymce</code>) this field becomes a WYSIWYG editor. Otherwise it stays a plain HTML textarea.
+      </div>
+    </div>
+  </template>
 }
