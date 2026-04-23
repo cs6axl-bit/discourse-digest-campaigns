@@ -85,6 +85,11 @@ module Admin
       exclude_days = 0 if exclude_days < 0
       exclude_days = 3650 if exclude_days > 3650
 
+      exclude_recent_emailed = truthy_param?(params[:exclude_recent_emailed], default: true)
+      exclude_emailed_days = int_param?(params[:exclude_recent_emailed_days], default: 1)
+      exclude_emailed_days = 0 if exclude_emailed_days < 0
+      exclude_emailed_days = 3650 if exclude_emailed_days > 3650
+
       set1 = ::DigestCampaigns.parse_topic_set_csv(params[:topic_set_1])
       set2 = ::DigestCampaigns.parse_topic_set_csv(params[:topic_set_2])
       set3 = ::DigestCampaigns.parse_topic_set_csv(params[:topic_set_3])
@@ -116,7 +121,9 @@ module Admin
       populate_queue_for_campaign!(
         c,
         exclude_recent_from_queue: exclude_recent,
-        exclude_recent_days: exclude_days
+        exclude_recent_days: exclude_days,
+        exclude_recent_emailed: exclude_recent_emailed,
+        exclude_emailed_days: exclude_emailed_days
       )
       c.update_columns(last_error: nil, last_populated_at: Time.zone.now, updated_at: Time.zone.now)
 
@@ -233,10 +240,20 @@ module Admin
       exclude_days = 0 if exclude_days < 0
       exclude_days = 3650 if exclude_days > 3650
 
+      exclude_recent_emailed = truthy_param?(params[:exclude_recent_emailed], default: true)
+      exclude_emailed_days = int_param?(params[:exclude_recent_emailed_days], default: 1)
+      exclude_emailed_days = 0 if exclude_emailed_days < 0
+      exclude_emailed_days = 3650 if exclude_emailed_days > 3650
+
       effective_sql = apply_recent_queue_exclusion(
         sql,
         exclude_recent_from_queue: exclude_recent,
         exclude_recent_days: exclude_days
+      )
+      effective_sql = apply_recent_emailed_exclusion(
+        effective_sql,
+        exclude_recent_emailed: exclude_recent_emailed,
+        exclude_emailed_days: exclude_emailed_days
       )
 
       count = DB.query_single("SELECT COUNT(*) FROM (#{effective_sql}) src").first.to_i
@@ -388,12 +405,17 @@ module Admin
       raise ArgumentError, "Invalid send_at datetime: #{s}"
     end
 
-    def populate_queue_for_campaign!(campaign, exclude_recent_from_queue: true, exclude_recent_days: 1)
+    def populate_queue_for_campaign!(campaign, exclude_recent_from_queue: true, exclude_recent_days: 1, exclude_recent_emailed: true, exclude_emailed_days: 1)
       sql = ::DigestCampaigns.validate_campaign_sql!(campaign.selection_sql)
       sql = apply_recent_queue_exclusion(
         sql,
         exclude_recent_from_queue: exclude_recent_from_queue,
         exclude_recent_days: exclude_recent_days
+      )
+      sql = apply_recent_emailed_exclusion(
+        sql,
+        exclude_recent_emailed: exclude_recent_emailed,
+        exclude_emailed_days: exclude_emailed_days
       )
 
       DB.exec(<<~SQL, campaign_key: campaign.campaign_key.to_s, nb: campaign.send_at)
@@ -455,6 +477,32 @@ module Admin
               OR
               (q.not_before IS NOT NULL AND q.status = 'sent' AND q.sent_at IS NOT NULL AND q.sent_at >= #{cutoff_sql})
             )
+        )
+      SQL
+    end
+
+    # Exclude users whose last_emailed_at is within the last N days.
+    def apply_recent_emailed_exclusion(selection_sql, exclude_recent_emailed:, exclude_emailed_days:)
+      return selection_sql unless exclude_recent_emailed
+
+      days = exclude_emailed_days.to_i
+      return selection_sql if days <= 0
+
+      cutoff = Time.zone.now - days.days
+      cutoff_sql = ActiveRecord::Base.connection.quote(cutoff)
+
+      <<~SQL
+        WITH src AS (
+          #{selection_sql}
+        )
+        SELECT src.*
+        FROM src
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM users u
+          WHERE u.id = src.user_id::int
+            AND u.last_emailed_at IS NOT NULL
+            AND u.last_emailed_at >= #{cutoff_sql}
         )
       SQL
     end

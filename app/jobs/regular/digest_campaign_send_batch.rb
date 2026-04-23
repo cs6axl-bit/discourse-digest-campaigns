@@ -107,6 +107,16 @@ module Jobs
             end
           end
 
+          if SiteSetting.digest_campaigns_update_last_emailed_at_on_send
+            begin
+              user.update_columns(last_emailed_at: Time.current)
+            rescue => e
+              Rails.logger.warn(
+                "[digest-campaigns] Failed updating last_emailed_at for user_id=#{user.id}: #{e.class}: #{e.message}",
+              )
+            end
+          end
+
           DB.exec(<<~SQL, id: id)
             UPDATE #{::DigestCampaigns::QUEUE_TABLE}
             SET status = 'sent',

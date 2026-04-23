@@ -32,6 +32,10 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   @tracked exclude_recent_from_queue = true;
   @tracked exclude_recent_from_queue_days = 1;
 
+  // Exclude users emailed within the last X days (on by default)
+  @tracked exclude_recent_emailed = true;
+  @tracked exclude_recent_emailed_days = 1;
+
   // Per-campaign delete behavior (checkbox next to Delete)
   // Default ON when a campaign first appears in the list.
   @tracked deleteQueuedOnDeleteById = {};
@@ -353,6 +357,8 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
           selection_sql: this.selection_sql,
           exclude_recent_from_queue: this.exclude_recent_from_queue,
           exclude_recent_from_queue_days: this.exclude_recent_from_queue_days,
+          exclude_recent_emailed: this.exclude_recent_emailed,
+          exclude_recent_emailed_days: this.exclude_recent_emailed_days,
         },
       });
       this.draftCount = res?.count;
@@ -439,6 +445,8 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
         test_email: this.test_email,
         exclude_recent_from_queue: this.exclude_recent_from_queue,
         exclude_recent_from_queue_days: this.exclude_recent_from_queue_days,
+        exclude_recent_emailed: this.exclude_recent_emailed,
+        exclude_recent_emailed_days: this.exclude_recent_emailed_days,
       };
 
       if (this.send_at && this.send_at.trim().length > 0) {
@@ -467,6 +475,8 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
       this.vsl2html_email_id = "";
       this.exclude_recent_from_queue = true;
       this.exclude_recent_from_queue_days = 1;
+      this.exclude_recent_emailed = true;
+      this.exclude_recent_emailed_days = 1;
 
       await this.refresh(1);
     } catch (e) {

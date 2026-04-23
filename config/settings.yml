@@ -214,6 +214,13 @@ plugins:
     client: false
     type: bool
 
+  # If enabled, after a successful campaign send we also set users.last_emailed_at = now.
+  # This keeps the Discourse "last emailed" timestamp in sync with campaign sends.
+  digest_campaigns_update_last_emailed_at_on_send:
+    default: false
+    client: false
+    type: bool
+
   digest_campaigns_max_send_attempts:
     default: 3
     min: 1
