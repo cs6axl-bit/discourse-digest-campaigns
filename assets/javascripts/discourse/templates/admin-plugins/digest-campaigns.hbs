@@ -197,6 +197,18 @@
           </button>
         </div>
 
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">
+          <Input
+            @value={{this.web2html_email_id}}
+            class="input-medium"
+            placeholder="webpage2html_email_outputs id"
+            {{on "input" this.onWeb2htmlEmailIdInput}}
+          />
+          <button class="btn" {{on "click" this.loadFromWeb2htmlEmail}} disabled={{this.busy}}>
+            Load from web2html email id
+          </button>
+        </div>
+
         <DigestCampaignsHtmlEditor
           @value={{this.custom_html_body}}
           @rows={{12}}
