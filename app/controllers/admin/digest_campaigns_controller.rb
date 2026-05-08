@@ -402,6 +402,46 @@ module Admin
       render_json_error(e.message)
     end
 
+    def web2html_email_html
+      id = params.require(:id).to_i
+      raise Discourse::InvalidParameters.new(:id) if id <= 0
+
+      row = DB.query_single(<<~SQL, id: id)
+        SELECT
+          id,
+          subject_titles_json,
+          preheaders_json,
+          html_full
+        FROM webpage2html_email_outputs
+        WHERE id = :id
+        LIMIT 1
+      SQL
+
+      raise Discourse::NotFound unless row.present?
+
+      record_id, subject_titles_json, preheaders_json, html_full = row
+
+      subjects   = normalize_fixed_length_array(parse_json_string_array(subject_titles_json), 3)
+      preheaders = normalize_fixed_length_array(parse_json_string_array(preheaders_json), 2)
+
+      render_json_dump(
+        ok: true,
+        source: {
+          id:               record_id.to_i,
+          subject_line_1:   subjects[0],
+          subject_line_2:   subjects[1],
+          subject_line_3:   subjects[2],
+          preheader_line_1: preheaders[0],
+          preheader_line_2: preheaders[1],
+          custom_html_body: html_full.to_s
+        }
+      )
+    rescue Discourse::NotFound
+      raise
+    rescue => e
+      render_json_error(e.message)
+    end
+
     private
 
     def parse_json_string_array(raw)
