@@ -66,6 +66,7 @@ module Admin
     def create
       key = params.require(:campaign_key).to_s.strip
       sql = ::DigestCampaigns.validate_campaign_sql!(params.require(:selection_sql).to_s)
+      sql = normalize_selection_sql!(sql)
 
       custom_html_body = params[:custom_html_body].to_s
       preheader_line_1 = params[:preheader_line_1].to_s
@@ -190,6 +191,7 @@ module Admin
       key = "draft_#{SecureRandom.hex(4)}" if key.blank?
 
       sql = ::DigestCampaigns.validate_campaign_sql!(params.require(:selection_sql).to_s)
+      sql = normalize_selection_sql!(sql)
 
       custom_html_body = params[:custom_html_body].to_s
       preheader_line_1 = params[:preheader_line_1].to_s
@@ -216,9 +218,6 @@ module Admin
       test_email = params.require(:test_email).to_s.strip
       send_at = parse_send_at(params[:send_at])
 
-      # Ensure SQL is at least syntactically valid; also a quick sanity check the segment returns user_id
-      verify_selection_sql_has_user_id!(sql)
-
       chosen = ::DigestCampaigns.pick_random_topic_set(topic_sets)
       res =
         send_test_digest!(
@@ -241,6 +240,7 @@ module Admin
     # Count how many rows the supplied selection_sql would return.
     def count_records
       sql = ::DigestCampaigns.validate_campaign_sql!(params.require(:selection_sql).to_s)
+      sql = normalize_selection_sql!(sql)
 
       exclude_recent = truthy_param?(params[:exclude_recent_from_queue], default: true)
       exclude_days = int_param?(params[:exclude_recent_from_queue_days], default: 1)
@@ -679,12 +679,40 @@ module Admin
       }
     end
 
-    def verify_selection_sql_has_user_id!(sql)
-      # Wrap and select user_id to validate presence. We only fetch 1 row, so it should be cheap.
-      DB.query_single("SELECT src.user_id FROM (#{sql}) src LIMIT 1")
-      true
-    rescue => e
-      raise ArgumentError, "selection_sql must return a column named user_id (and be valid SQL). Error: #{e.message}"
+    # Detect whether the SQL returns user_id or an email column.
+    # - If it returns user_id, return the SQL unchanged.
+    # - If it returns user_email or email (from any table), wrap it with a
+    #   JOIN to the Discourse users table to produce user_id.
+    # - Otherwise raise an ArgumentError.
+    def normalize_selection_sql!(sql)
+      result = ActiveRecord::Base.connection.execute(
+        "SELECT * FROM (#{sql}) _digest_campaigns_detect LIMIT 0"
+      )
+      cols = result.fields.map { |f| f.to_s.downcase }
+
+      return sql if cols.include?("user_id")
+
+      email_col =
+        if cols.include?("user_email")
+          "user_email"
+        elsif cols.include?("email")
+          "email"
+        else
+          raise ArgumentError,
+                "selection_sql must return a column named user_id, user_email, or email. " \
+                "Columns found: #{cols.join(', ')}"
+        end
+
+      <<~SQL.strip
+        SELECT u.id AS user_id
+        FROM (#{sql}) _email_src
+        JOIN users u ON LOWER(u.email) = LOWER(_email_src.#{email_col})
+        WHERE u.active = true
+          AND u.staged = false
+          AND u.id > 0
+      SQL
+    rescue ActiveRecord::StatementInvalid => e
+      raise ArgumentError, "selection_sql is not valid SQL: #{e.message}"
     end
   end
 end

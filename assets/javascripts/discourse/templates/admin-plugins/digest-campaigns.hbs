@@ -50,13 +50,13 @@
     </div>
 
     <div class="control-group">
-      <label class="control-label">selection_sql (returns user_id)</label>
+      <label class="control-label">selection_sql (returns user_id, user_email, or email)</label>
       <div class="controls">
         <Textarea
           @value={{this.selection_sql}}
           class="input-xxlarge"
           rows="6"
-          placeholder="SELECT u.id AS user_id FROM users u WHERE u.active = true"
+          placeholder="SELECT u.id AS user_id FROM users u WHERE u.active = true&#10;-- or: SELECT email FROM my_custom_table WHERE …"
         />
 
         <div style="margin-top:6px;">
