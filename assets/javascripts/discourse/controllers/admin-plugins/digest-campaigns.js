@@ -51,6 +51,8 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   @tracked error = "";
   @tracked notice = "";
 
+  @tracked copy_campaign_id = "";
+
   @tracked draftCount = null;
   @tracked showSqlById = {};
   @tracked testEmailById = {};
@@ -58,6 +60,58 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   clearMessages() {
     this.error = "";
     this.notice = "";
+  }
+
+  @action
+  onCopyCampaignIdInput(event) {
+    this.copy_campaign_id = event?.target?.value || "";
+  }
+
+  @action
+  async copyFromCampaign() {
+    this.clearMessages();
+
+    const rawId = (this.copy_campaign_id || "").trim();
+    if (!rawId) {
+      this.error = "Enter a campaign ID to copy from.";
+      return;
+    }
+
+    const id = Number.parseInt(rawId, 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      this.error = "Campaign ID must be a positive integer.";
+      return;
+    }
+
+    this.busy = true;
+    try {
+      const res = await ajax(`/admin/digest-campaigns/${id}.json`);
+      const c = res?.campaign || {};
+
+      const toSetStr = (arr) =>
+        (Array.isArray(arr) ? arr : []).map(String).join(",");
+
+      this.campaign_key = c.campaign_key || "";
+      this.selection_sql = c.selection_sql || "";
+      this.topic_set_1 = toSetStr(c.topic_sets?.[0]);
+      this.topic_set_2 = toSetStr(c.topic_sets?.[1]);
+      this.topic_set_3 = toSetStr(c.topic_sets?.[2]);
+      this.subject_line_1 = c.subject_line_1 || "";
+      this.subject_line_2 = c.subject_line_2 || "";
+      this.subject_line_3 = c.subject_line_3 || "";
+      this.preheader_line_1 = c.preheader_line_1 || "";
+      this.preheader_line_2 = c.preheader_line_2 || "";
+      this.custom_html_body = c.custom_html_body || "";
+
+      this.notice = `Copied fields from campaign id=${id} (${c.campaign_key}). Review and adjust before creating.`;
+    } catch (e) {
+      this.error =
+        e?.jqXHR?.responseJSON?.errors?.[0] ||
+        e?.message ||
+        "Failed to load campaign";
+    } finally {
+      this.busy = false;
+    }
   }
 
   @action

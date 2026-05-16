@@ -134,6 +134,13 @@ module Admin
       render_json_error(e.message)
     end
 
+    def show
+      c = find_campaign
+      render_json_dump(ok: true, campaign: c.as_json)
+    rescue => e
+      render_json_error(e.message)
+    end
+
     def enable
       c = find_campaign
       c.update!(enabled: true)

@@ -20,6 +20,28 @@
   <h2>Create Campaign</h2>
 
   <div class="form-horizontal">
+    <div class="control-group" style="margin-bottom:16px; padding:12px; background:#f0f4ff; border:1px solid #c8d8ff; border-radius:4px;">
+      <label class="control-label">Copy from campaign ID</label>
+      <div class="controls">
+        <div style="display:flex; gap:8px; align-items:center;">
+          <Input
+            @value={{this.copy_campaign_id}}
+            class="input-medium"
+            placeholder="e.g. 629"
+            {{on "input" this.onCopyCampaignIdInput}}
+          />
+          <button class="btn btn-default" {{on "click" this.copyFromCampaign}} disabled={{this.busy}}>
+            Copy input fields from campaign
+          </button>
+        </div>
+        <div class="help-block">
+          Populates all fields below from an existing campaign. Does not schedule or create — just fills the form so you can review and adjust.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-horizontal">
     <div class="control-group">
       <label class="control-label">campaign_key</label>
       <div class="controls">
