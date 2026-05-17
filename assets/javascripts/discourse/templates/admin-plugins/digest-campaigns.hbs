@@ -362,7 +362,7 @@
       <tbody>
         {{#each this.campaigns as |c|}}
           <tr>
-            <td>{{c.id}}</td>
+            <td><a href="http://144.91.122.183:8081/dashboard.php?start=2020-05-17T00%3A00&end=2040-05-17T16%3A12&daily=0&all_domains=0&campaign_mode=all&campaign_ids={{c.id}}&do_provider=1&do_domain=1&run_accounts=0&all_accounts=0&run_categories=0&all_categories=0&run_campaigns=0&all_campaigns=0&run_genders=0&all_genders=0&run_sources=0&all_sources=0" target="_blank" rel="noopener">{{c.id}}</a></td>
             <td><code>{{c.campaign_key}}</code></td>
             <td>{{c.enabled}}</td>
             <td>{{c.send_at}}</td>
