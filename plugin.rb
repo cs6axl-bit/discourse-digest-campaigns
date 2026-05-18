@@ -106,6 +106,7 @@ after_initialize do
       post   "/digest-campaigns/:id/test.json" => "digest_campaigns#test_send"
       post   "/digest-campaigns/test-draft.json" => "digest_campaigns#test_draft"
       post   "/digest-campaigns/count.json" => "digest_campaigns#count_records"
+      post   "/digest-campaigns/regenerate.json" => "digest_campaigns#regenerate"
       get    "/digest-campaigns/:id.json" => "digest_campaigns#show"
       get    "/digest-campaigns/hardsale-email-html/:id.json" => "digest_campaigns#hardsale_email_html"
       get    "/digest-campaigns/bundle-email/:id.json" => "digest_campaigns#bundle_email_html"
@@ -119,6 +120,7 @@ after_initialize do
   end
 
   require_relative "lib/digest_campaigns/aiwrite_hardsale_service" if File.exist?(File.join(__dir__, "lib/digest_campaigns/aiwrite_hardsale_service.rb"))
+  require_relative "lib/digest_campaigns/gemini_regeneration_service"
   require_relative "app/models/digest_campaigns/campaign"
   require_relative "app/jobs/scheduled/digest_campaign_poller"
   require_relative "app/jobs/regular/digest_campaign_send_batch"

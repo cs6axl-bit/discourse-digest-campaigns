@@ -33,6 +33,13 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   @tracked exclude_recent_from_queue = true;
   @tracked exclude_recent_from_queue_days = 1;
 
+  // AI Regeneration
+  @tracked regenDoText = true;
+  @tracked regenDoImage = true;
+  @tracked regen_text_note = "";
+  @tracked regen_image_note = "";
+  @tracked regenerating = false;
+
   // Exclude users emailed within the last X days (on by default)
   @tracked exclude_recent_emailed = true;
   @tracked exclude_recent_emailed_days = 1;
@@ -253,6 +260,69 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   @action
   onWeb2htmlEmailIdInput(event) {
     this.web2html_email_id = event?.target?.value || "";
+  }
+
+  @action
+  onRegenTextNoteInput(event) {
+    this.regen_text_note = event?.target?.value || "";
+  }
+
+  @action
+  onRegenImageNoteInput(event) {
+    this.regen_image_note = event?.target?.value || "";
+  }
+
+  @action
+  async regenerate() {
+    this.clearMessages();
+
+    if (!this.regenDoText && !this.regenDoImage) {
+      this.error = "Select at least one of 'Do Text' or 'Do Image' before regenerating.";
+      return;
+    }
+
+    if (!this.custom_html_body || !this.custom_html_body.trim()) {
+      this.error = "The HTML body must be filled in before regenerating.";
+      return;
+    }
+
+    this.regenerating = true;
+    this.busy = true;
+    try {
+      const res = await ajax("/admin/digest-campaigns/regenerate.json", {
+        type: "POST",
+        data: {
+          subject_line_1:   this.subject_line_1,
+          subject_line_2:   this.subject_line_2,
+          subject_line_3:   this.subject_line_3,
+          preheader_line_1: this.preheader_line_1,
+          preheader_line_2: this.preheader_line_2,
+          html_body:        this.custom_html_body,
+          do_text:          this.regenDoText ? "1" : "0",
+          do_image:         this.regenDoImage ? "1" : "0",
+          text_note:        this.regen_text_note,
+          image_note:       this.regen_image_note,
+        },
+      });
+
+      const r = res?.result || {};
+      this.subject_line_1   = r.subject_line_1   ?? this.subject_line_1;
+      this.subject_line_2   = r.subject_line_2   ?? this.subject_line_2;
+      this.subject_line_3   = r.subject_line_3   ?? this.subject_line_3;
+      this.preheader_line_1 = r.preheader_line_1 ?? this.preheader_line_1;
+      this.preheader_line_2 = r.preheader_line_2 ?? this.preheader_line_2;
+      this.custom_html_body = r.html_body         ?? this.custom_html_body;
+
+      this.notice = "Regeneration complete. Fields updated with new content.";
+    } catch (e) {
+      this.error =
+        e?.jqXHR?.responseJSON?.errors?.[0] ||
+        e?.message ||
+        "Regeneration failed";
+    } finally {
+      this.regenerating = false;
+      this.busy = false;
+    }
   }
 
   @action

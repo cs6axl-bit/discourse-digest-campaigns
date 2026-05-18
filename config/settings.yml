@@ -235,4 +235,22 @@ plugins:
     max: 10080
     client: false
     type: integer
-    
+
+  # ─── Gemini AI Regeneration ───────────────────────────────────────────────
+
+  digest_campaigns_gemini_api_key:
+    default: ""
+    client: false
+    type: string
+    secret: true
+
+  digest_campaigns_gemini_text_model:
+    default: "gemini-2.5-flash-preview-05-20"
+    client: false
+    type: string
+
+  digest_campaigns_gemini_image_model:
+    default: "gemini-2.0-flash-exp-image-generation"
+    client: false
+    type: string
+

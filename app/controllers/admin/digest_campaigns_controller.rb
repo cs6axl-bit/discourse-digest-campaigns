@@ -449,6 +449,45 @@ module Admin
       render_json_error(e.message)
     end
 
+    def regenerate
+      api_key = SiteSetting.digest_campaigns_gemini_api_key.to_s.strip
+      raise ArgumentError, "digest_campaigns_gemini_api_key site setting is not configured" if api_key.blank?
+
+      subject_line_1   = params[:subject_line_1].to_s
+      subject_line_2   = params[:subject_line_2].to_s
+      subject_line_3   = params[:subject_line_3].to_s
+      preheader_line_1 = params[:preheader_line_1].to_s
+      preheader_line_2 = params[:preheader_line_2].to_s
+      html_body        = params[:html_body].to_s
+
+      do_text  = truthy_param?(params[:do_text],  default: true)
+      do_image = truthy_param?(params[:do_image], default: true)
+      text_note  = params[:text_note].to_s.strip
+      image_note = params[:image_note].to_s.strip
+
+      raise ArgumentError, "html_body is required" if html_body.strip.blank?
+      raise ArgumentError, "Select at least one of do_text or do_image" unless do_text || do_image
+
+      service = ::DigestCampaigns::GeminiRegenerationService.new(
+        api_key:          api_key,
+        subject_line_1:   subject_line_1,
+        subject_line_2:   subject_line_2,
+        subject_line_3:   subject_line_3,
+        preheader_line_1: preheader_line_1,
+        preheader_line_2: preheader_line_2,
+        html_body:        html_body,
+        do_text:          do_text,
+        do_image:         do_image,
+        text_note:        text_note,
+        image_note:       image_note
+      )
+
+      result = service.run!
+      render_json_dump(ok: true, result: result)
+    rescue => e
+      render_json_error(e.message)
+    end
+
     private
 
     def parse_json_string_array(raw)

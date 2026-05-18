@@ -243,6 +243,63 @@
         <div class="help-block">
           Email format: logo → divider → (optional preheader lines) → divider → your HTML → divider → Discourse unsubscribe.
         </div>
+
+        {{!-- ── AI Regeneration panel ── --}}
+        <div style="margin-top:16px; padding:14px 16px; border:1px solid #d0d7de; border-radius:6px; background:#f8f9fa;">
+          <div style="font-weight:600; margin-bottom:10px;">AI Regenerate (Gemini)</div>
+
+          <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap; margin-bottom:10px;">
+            <label class="checkbox" style="display:inline-flex; align-items:center; gap:6px; margin:0;">
+              <Input @type="checkbox" @checked={{this.regenDoText}} />
+              Do Text
+            </label>
+            <label class="checkbox" style="display:inline-flex; align-items:center; gap:6px; margin:0;">
+              <Input @type="checkbox" @checked={{this.regenDoImage}} />
+              Do Image
+            </label>
+          </div>
+
+          <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+            <div style="flex:1; min-width:200px;">
+              <label style="display:block; font-size:12px; color:#555; margin-bottom:3px;">text_note (extra instructions for text rewrite)</label>
+              <textarea
+                class="input-xxlarge"
+                rows="2"
+                placeholder="e.g. make it more casual, focus on the discount angle…"
+                style="width:100%; resize:vertical;"
+                value={{this.regen_text_note}}
+                {{on "input" this.onRegenTextNoteInput}}
+              ></textarea>
+            </div>
+            <div style="flex:1; min-width:200px;">
+              <label style="display:block; font-size:12px; color:#555; margin-bottom:3px;">image_note (extra instructions for image generation)</label>
+              <textarea
+                class="input-xxlarge"
+                rows="2"
+                placeholder="e.g. dark background, show a person exercising…"
+                style="width:100%; resize:vertical;"
+                value={{this.regen_image_note}}
+                {{on "input" this.onRegenImageNoteInput}}
+              ></textarea>
+            </div>
+          </div>
+
+          <button
+            class="btn btn-primary"
+            {{on "click" this.regenerate}}
+            disabled={{or this.busy this.regenerating}}
+          >
+            {{#if this.regenerating}}
+              Regenerating…
+            {{else}}
+              Regenerate
+            {{/if}}
+          </button>
+
+          <div class="help-block" style="margin-top:8px;">
+            Sends current subjects / preheaders / HTML to Gemini. If "Do Text" is checked, the email copy is rewritten. If "Do Image" is checked, a new YouTube-thumbnail-style hero image is generated, uploaded to Discourse, and injected into the HTML (old image link preserved). Results are auto-filled into the form fields above and saved to the <code>digest_campaign_regenerations</code> table.
+          </div>
+        </div>
       </div>
     </div>
 
