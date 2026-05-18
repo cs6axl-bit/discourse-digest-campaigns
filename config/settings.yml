@@ -90,6 +90,14 @@ plugins:
     client: false
     type: integer
 
+  # Number of <br> line breaks inserted between the bottom of the HTML body and the divider above the unsubscribe text
+  digest_campaigns_unsub_line_breaks:
+    default: 2
+    min: 0
+    max: 20
+    client: false
+    type: integer
+
   # NEW: HTML campaign preheader font size (in px)
   # Applies to the optional 1-2 preheader lines shown above the HTML body.
   digest_campaigns_html_preheader_font_size:

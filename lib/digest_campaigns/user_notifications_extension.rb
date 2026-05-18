@@ -1444,6 +1444,15 @@ module ::DigestCampaigns
             unsub_link_font_size = 12
           end
 
+          unsub_line_breaks = 2
+          begin
+            v = SiteSetting.digest_campaigns_unsub_line_breaks.to_i
+            unsub_line_breaks = v if v >= 0 && v <= 20
+          rescue
+            unsub_line_breaks = 2
+          end
+          unsub_br_padding = "<br />" * unsub_line_breaks
+
           unsub_html = <<~HTML
             <div style="line-height:1.4; padding: 10px 0; text-align:center;">
               <span style="font-size:#{unsub_font_size}px;">#{ERB::Util.html_escape(unsub_text)}</span> <a href="#{ERB::Util.html_escape(unsub_url)}" style="font-size:#{unsub_link_font_size}px; text-decoration:underline; font-weight:normal;">#{ERB::Util.html_escape(unsub_link_text)}</a>
@@ -1527,6 +1536,7 @@ module ::DigestCampaigns
               <div style="padding: 6px 0;">
                 #{custom_html_body}
               </div>
+              #{unsub_br_padding}
               <hr style="border:0; border-top:1px solid #e6e6e6; margin: 10px 0;" />
               #{unsub_html}
             </div>
