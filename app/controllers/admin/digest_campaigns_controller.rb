@@ -743,9 +743,11 @@ module Admin
         end
 
       <<~SQL.strip
-        SELECT u.id AS user_id
+        SELECT ue.user_id AS user_id
         FROM (#{sql}) _email_src
-        JOIN users u ON LOWER(u.email) = LOWER(_email_src.#{email_col})
+        JOIN user_emails ue ON LOWER(ue.email) = LOWER(_email_src.#{email_col})
+          AND ue."primary" = true
+        JOIN users u ON u.id = ue.user_id
         WHERE u.active = true
           AND u.staged = false
           AND u.id > 0
