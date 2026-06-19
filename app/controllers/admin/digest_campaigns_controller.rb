@@ -75,6 +75,7 @@ module Admin
       subject_line_1 = params[:subject_line_1].to_s
       subject_line_2 = params[:subject_line_2].to_s
       subject_line_3 = params[:subject_line_3].to_s
+      from_name = params[:from_name].to_s.strip
 
       # Basic safety limit (avoid multi-MB payloads in the DB / JSON API)
       if custom_html_body.bytesize > 500_000
@@ -115,7 +116,8 @@ module Admin
         preheader_line_2: preheader_line_2,
         subject_line_1: subject_line_1,
         subject_line_2: subject_line_2,
-        subject_line_3: subject_line_3
+        subject_line_3: subject_line_3,
+        from_name: from_name.presence
       )
       c.save!
 
@@ -200,6 +202,7 @@ module Admin
       subject_line_1 = params[:subject_line_1].to_s
       subject_line_2 = params[:subject_line_2].to_s
       subject_line_3 = params[:subject_line_3].to_s
+      from_name = params[:from_name].to_s.strip
 
       if custom_html_body.bytesize > 500_000
         raise ArgumentError, "custom_html_body is too large (max 500KB)"
@@ -230,7 +233,8 @@ module Admin
           preheader_line_2: preheader_line_2,
           subject_line_1: subject_line_1,
           subject_line_2: subject_line_2,
-          subject_line_3: subject_line_3
+          subject_line_3: subject_line_3,
+          from_name: from_name.presence
         )
       render_json_dump(ok: true, test: res)
     rescue => e
@@ -667,7 +671,8 @@ module Admin
         preheader_line_2: campaign.preheader_line_2,
         subject_line_1: campaign.subject_line_1,
         subject_line_2: campaign.subject_line_2,
-        subject_line_3: campaign.subject_line_3
+        subject_line_3: campaign.subject_line_3,
+        from_name: campaign.from_name
       )
     end
 
@@ -682,7 +687,8 @@ module Admin
       preheader_line_2: nil,
       subject_line_1: nil,
       subject_line_2: nil,
-      subject_line_3: nil
+      subject_line_3: nil,
+      from_name: nil
     )
       user = User.find_by_email(test_email)
       raise "Test email not found as a Discourse user: #{test_email}" if user.nil?
@@ -703,7 +709,8 @@ module Admin
           campaign_preheader_line_2: preheader_line_2,
           campaign_subject_line_1: subject_line_1,
           campaign_subject_line_2: subject_line_2,
-          campaign_subject_line_3: subject_line_3
+          campaign_subject_line_3: subject_line_3,
+          campaign_from_name: from_name
         )
 
       Email::Sender.new(message, :digest).send

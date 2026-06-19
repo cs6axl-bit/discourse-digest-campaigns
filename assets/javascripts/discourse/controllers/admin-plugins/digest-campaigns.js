@@ -29,6 +29,9 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   @tracked subject_line_2 = "";
   @tracked subject_line_3 = "";
 
+  // From name override (optional; falls back to forum default)
+  @tracked from_name = "";
+
   // Exclude users who have queue rows in the last X days (on by default)
   @tracked exclude_recent_from_queue = true;
   @tracked exclude_recent_from_queue_days = 1;
@@ -109,6 +112,7 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
       this.preheader_line_1 = c.preheader_line_1 || "";
       this.preheader_line_2 = c.preheader_line_2 || "";
       this.custom_html_body = c.custom_html_body || "";
+      this.from_name = c.from_name || "";
 
       this.notice = `Copied fields from campaign id=${id} (${c.campaign_key}). Review and adjust before creating.`;
     } catch (e) {
@@ -563,6 +567,7 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
         preheader_line_1: this.preheader_line_1,
         preheader_line_2: this.preheader_line_2,
         custom_html_body: this.custom_html_body,
+        from_name: this.from_name,
         test_email: email,
       };
 
@@ -611,6 +616,7 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
         preheader_line_1: this.preheader_line_1,
         preheader_line_2: this.preheader_line_2,
         custom_html_body: this.custom_html_body,
+        from_name: this.from_name,
         test_email: this.test_email,
         exclude_recent_from_queue: this.exclude_recent_from_queue,
         exclude_recent_from_queue_days: this.exclude_recent_from_queue_days,
@@ -639,6 +645,7 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
       this.preheader_line_1 = "";
       this.preheader_line_2 = "";
       this.custom_html_body = "";
+      this.from_name = "";
       this.hardsale_email_html_id = "";
       this.bundle_email_id = "";
       this.vsl2html_email_id = "";

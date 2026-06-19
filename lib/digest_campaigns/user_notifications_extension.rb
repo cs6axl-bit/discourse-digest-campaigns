@@ -1297,6 +1297,7 @@ module ::DigestCampaigns
       subject_line_1 = opts[:campaign_subject_line_1]
       subject_line_2 = opts[:campaign_subject_line_2]
       subject_line_3 = opts[:campaign_subject_line_3]
+      campaign_from_name = opts[:campaign_from_name]
 
       has_custom_html = custom_html_body.to_s.strip.present?
 
@@ -1598,6 +1599,25 @@ module ::DigestCampaigns
         topic_ids: topics_for_digest.map(&:id),
         post_ids: topics_for_digest.map { |t| t.first_post&.id }.compact
       )
+
+      if campaign_from_name.to_s.strip.present?
+        begin
+          from_name_val = campaign_from_name.to_s.strip
+          current_from = Array(message.from).first.to_s
+          email_addr =
+            if current_from.match?(/<(.+?)>/)
+              current_from.match(/<(.+?)>/)[1]
+            elsif current_from.include?("@")
+              current_from.strip
+            else
+              SiteSetting.notification_email.to_s.strip.presence ||
+                SiteSetting.support_email.to_s.strip
+            end
+          message[:from] = "#{from_name_val} <#{email_addr}>" if email_addr.present?
+        rescue => e
+          Rails.logger.warn("digest-campaigns from_name rewrite failed: #{e.class}: #{e.message}")
+        end
+      end
 
       begin
         ::DigestCampaigns::DigestAppendData.email_id_dlog(

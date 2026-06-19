@@ -167,6 +167,16 @@
     </div>
 
     <div class="control-group">
+      <label class="control-label">from_name (optional)</label>
+      <div class="controls">
+        <Input @value={{this.from_name}} class="input-xxlarge" placeholder="e.g. The Community Team" />
+        <div class="help-block">
+          Display name recipients see in their inbox. Leave blank to use the forum default.
+        </div>
+      </div>
+    </div>
+
+    <div class="control-group">
       <label class="control-label">preheader_line_1 (optional)</label>
       <div class="controls">
         <Input @value={{this.preheader_line_1}} class="input-xxlarge" placeholder="Optional line 1" />
@@ -495,6 +505,10 @@
                   {{#if c.subject_line_3}}
                     <div style="margin-top:10px;"><strong>subject_line_3</strong></div>
                     <pre style="white-space: pre-wrap;">{{c.subject_line_3}}</pre>
+                  {{/if}}
+                  {{#if c.from_name}}
+                    <div style="margin-top:10px;"><strong>from_name</strong></div>
+                    <pre style="white-space: pre-wrap;">{{c.from_name}}</pre>
                   {{/if}}
 
                   {{#if c.custom_html_body}}

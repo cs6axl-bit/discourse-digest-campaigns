@@ -90,7 +90,8 @@ module Jobs
               campaign_preheader_line_2: (has_custom_html ? campaign.preheader_line_2 : nil),
               campaign_subject_line_1: campaign.subject_line_1,
               campaign_subject_line_2: campaign.subject_line_2,
-              campaign_subject_line_3: campaign.subject_line_3
+              campaign_subject_line_3: campaign.subject_line_3,
+              campaign_from_name: campaign.from_name
             )
 
           Email::Sender.new(message, :digest).send
