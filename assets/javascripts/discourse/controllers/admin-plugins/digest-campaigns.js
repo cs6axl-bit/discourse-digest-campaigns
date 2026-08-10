@@ -368,6 +368,17 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
     }
   }
 
+  formatDateTime(value) {
+    if (!value) {
+      return "";
+    }
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) {
+      return "";
+    }
+    return d.toLocaleString();
+  }
+
   formatTopicSets(topicSets) {
     const sets = Array.isArray(topicSets) ? topicSets : [];
     if (!sets.length) {
