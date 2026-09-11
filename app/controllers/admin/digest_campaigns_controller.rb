@@ -16,7 +16,10 @@ module Admin
       scope = DigestCampaigns::Campaign.all
 
       if truthy_param?(params[:hide_hardsale], default: false)
-        scope = scope.where("campaign_key NOT LIKE 'hardsale_topic_%'")
+        scope =
+          scope.where(
+            "campaign_key NOT LIKE 'hardsale_topic_%' AND campaign_key NOT LIKE 'vslcampaign_vsl2html_%'",
+          )
       end
 
       if (search = params[:search].to_s.strip).present?
