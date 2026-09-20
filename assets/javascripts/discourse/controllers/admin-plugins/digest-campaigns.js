@@ -125,8 +125,7 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
       this.vsl_direct = !!c.vsl_direct;
       this.vsl_skip_coinflip = !!c.vsl_skip_coinflip;
       this.vsl_ignore_min_emails = !!c.vsl_ignore_min_emails;
-      this.vsl_allowed_sources = (c.vsl_allowed_sources || []).join("
-");
+      this.vsl_allowed_sources = (c.vsl_allowed_sources || []).join("\n");
 
       this.notice = `Copied fields from campaign id=${id} (${c.campaign_key}). Review and adjust before creating.`;
     } catch (e) {
