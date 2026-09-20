@@ -32,6 +32,14 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   // From name override (optional; falls back to forum default)
   @tracked from_name = "";
 
+  // Regular digest campaign: send the normal digest (no HTML / topic sets) and let
+  // promo-digest-injector run. vsl_* sub-options drive its VSL campaign flow.
+  @tracked regular_digest = false;
+  @tracked vsl_direct = false;
+  @tracked vsl_skip_coinflip = false;
+  @tracked vsl_ignore_min_emails = false;
+  @tracked vsl_allowed_sources = "";
+
   // Exclude users who have queue rows in the last X days (on by default)
   @tracked exclude_recent_from_queue = true;
   @tracked exclude_recent_from_queue_days = 1;
@@ -113,6 +121,12 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
       this.preheader_line_2 = c.preheader_line_2 || "";
       this.custom_html_body = c.custom_html_body || "";
       this.from_name = c.from_name || "";
+      this.regular_digest = !!c.regular_digest;
+      this.vsl_direct = !!c.vsl_direct;
+      this.vsl_skip_coinflip = !!c.vsl_skip_coinflip;
+      this.vsl_ignore_min_emails = !!c.vsl_ignore_min_emails;
+      this.vsl_allowed_sources = (c.vsl_allowed_sources || []).join("
+");
 
       this.notice = `Copied fields from campaign id=${id} (${c.campaign_key}). Review and adjust before creating.`;
     } catch (e) {
@@ -556,6 +570,21 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   }
 
   @action
+  onVslAllowedSourcesInput(event) {
+    this.vsl_allowed_sources = event?.target?.value || "";
+  }
+
+  regularDigestPayload() {
+    return {
+      regular_digest: this.regular_digest,
+      vsl_direct: this.vsl_direct,
+      vsl_skip_coinflip: this.vsl_skip_coinflip,
+      vsl_ignore_min_emails: this.vsl_ignore_min_emails,
+      vsl_allowed_sources: this.vsl_allowed_sources,
+    };
+  }
+
+  @action
   async testDraft() {
     this.clearMessages();
     const email = (this.test_email || "").trim();
@@ -580,6 +609,7 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
         custom_html_body: this.custom_html_body,
         from_name: this.from_name,
         test_email: email,
+        ...this.regularDigestPayload(),
       };
 
       if (this.send_at && this.send_at.trim().length > 0) {
@@ -593,9 +623,13 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
       });
 
       const chosen = res?.test?.chosen_topic_ids?.join(",") || "";
-      this.notice = `Draft test sent to ${email}${
-        chosen ? ` (topics: ${chosen})` : ""
-      }.`;
+      if (res?.test?.vsl_queued) {
+        this.notice = `Regular digest for ${email} was redirected to a VSL campaign (${res.test.vsl_campaign_key}, source: ${res.test.vsl_source}). It is queued and will be sent by the poller; no digest email was sent.`;
+      } else {
+        this.notice = `Draft test sent to ${email}${
+          chosen ? ` (topics: ${chosen})` : ""
+        }.`;
+      }
     } catch (e) {
       this.error =
         e?.jqXHR?.responseJSON?.errors?.[0] ||
@@ -633,6 +667,7 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
         exclude_recent_from_queue_days: this.exclude_recent_from_queue_days,
         exclude_recent_emailed: this.exclude_recent_emailed,
         exclude_recent_emailed_days: this.exclude_recent_emailed_days,
+        ...this.regularDigestPayload(),
       };
 
       if (this.send_at && this.send_at.trim().length > 0) {
@@ -657,6 +692,11 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
       this.preheader_line_2 = "";
       this.custom_html_body = "";
       this.from_name = "";
+      this.regular_digest = false;
+      this.vsl_direct = false;
+      this.vsl_skip_coinflip = false;
+      this.vsl_ignore_min_emails = false;
+      this.vsl_allowed_sources = "";
       this.hardsale_email_html_id = "";
       this.bundle_email_id = "";
       this.vsl2html_email_id = "";
@@ -750,11 +790,13 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
 
     this.busy = true;
     try {
-      await ajax(`/admin/digest-campaigns/${id}/test.json`, {
+      const res = await ajax(`/admin/digest-campaigns/${id}/test.json`, {
         type: "POST",
         data: { test_email: email },
       });
-      this.notice = `Test sent to ${email}`;
+      this.notice = res?.test?.vsl_queued
+        ? `Regular digest for ${email} was redirected to a VSL campaign (${res.test.vsl_campaign_key}, source: ${res.test.vsl_source}). It is queued and will be sent by the poller; no digest email was sent.`
+        : `Test sent to ${email}`;
     } catch (e) {
       this.error =
         e?.jqXHR?.responseJSON?.errors?.[0] ||

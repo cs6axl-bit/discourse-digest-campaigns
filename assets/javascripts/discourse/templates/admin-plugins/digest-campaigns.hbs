@@ -118,6 +118,70 @@
     </div>
 
     <div class="control-group">
+      <label class="control-label">regular digest</label>
+      <div class="controls">
+        <label class="checkbox" style="display:block;">
+          <Input @type="checkbox" @checked={{this.regular_digest}} />
+          <strong>Send the regular digest</strong> instead of custom HTML / topic sets
+        </label>
+        <div class="help-block">
+          Creates a campaign that sends each contact a normal Discourse digest (the real digest action, so
+          <code>discourse-promo-digest-injector</code> and any other digest plugin runs as usual).
+          Leave <code>custom_html_body</code> and the topic sets empty. Subject, preheader and from_name overrides are not used.
+        </div>
+
+        {{#if this.regular_digest}}
+          <div style="margin-top:10px; padding:12px 16px; border:1px solid #d0d7de; border-radius:6px; background:#f8f9fa;">
+            <div style="font-weight:600; margin-bottom:8px;">VSL campaign flow options (injector)</div>
+
+            <label class="checkbox" style="display:block;">
+              <Input @type="checkbox" @checked={{this.vsl_direct}} />
+              Disable main cooldown
+            </label>
+            <div class="help-block" style="margin-bottom:8px;">
+              Bypasses the VSL flow's main per-flow cooldown (users who received a VSL email in the last N days
+              are normally skipped). If the flow queues a VSL campaign, it replaces the digest; if it cannot
+              (no watched categories, no viable campaign, ...) the normal digest logic continues.
+            </div>
+
+            <label class="checkbox" style="display:block;">
+              <Input @type="checkbox" @checked={{this.vsl_ignore_min_emails}} />
+              Ignore the minimum emails received check
+            </label>
+
+            <label class="checkbox" style="display:block;">
+              <Input @type="checkbox" @checked={{this.vsl_skip_coinflip}} />
+              Skip the VSL skip-percent coinflip
+            </label>
+
+            <div style="margin-top:8px;">
+              <label style="display:block; font-size:12px; color:#555; margin-bottom:3px;">
+                Limit VSL campaign selection to these <code>source</code> values (optional)
+              </label>
+              <textarea
+                class="input-xxlarge"
+                rows="3"
+                placeholder="one per line or comma-separated; leave empty for no restriction"
+                style="width:100%; resize:vertical;"
+                value={{this.vsl_allowed_sources}}
+                {{on "input" this.onVslAllowedSourcesInput}}
+              ></textarea>
+              <div class="help-block">
+                Exact match, case-insensitive. Applies to every VSL selection during this campaign's sends
+                (also the "random_all" fallbacks).
+              </div>
+            </div>
+
+            <div class="help-block" style="margin-top:8px;">
+              The three checkboxes are independent, and none of them bypasses the injector's master switches
+              (<code>promo_digest_injector_enabled</code> / <code>vslcampaign_enabled</code>) or its same-campaign / same-source cooldowns.
+            </div>
+          </div>
+        {{/if}}
+      </div>
+    </div>
+
+    <div class="control-group">
       <label class="control-label">topic_set_1</label>
       <div class="controls">
         <Input @value={{this.topic_set_1}} class="input-xxlarge" placeholder="3782,1351,1423,1374" />
@@ -423,6 +487,8 @@
           <th>Sent</th>
           <th>Failed</th>
           <th>Skipped</th>
+          <th>VSL redirected</th>
+          <th>No digest</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -440,6 +506,8 @@
             <td>{{c.sent_count}}</td>
             <td>{{c.failed_count}}</td>
             <td>{{c.skipped_unsubscribed_count}}</td>
+            <td>{{c.vsl_redirected_count}}</td>
+            <td>{{c.skipped_no_digest_count}}</td>
             <td>
               {{#if c.enabled}}
                 <button class="btn" {{on "click" (fn this.disableCampaign c.id)}} disabled={{this.busy}}>Disable</button>
@@ -486,7 +554,7 @@
 
           {{#if (get this.showSqlById c.id)}}
             <tr>
-              <td colspan="11">
+              <td colspan="13">
                 <div class="well">
                   <div style="margin-bottom:10px;">
                     <div style="margin-bottom:6px;"><strong>topic_sets</strong></div>
@@ -507,6 +575,13 @@
                   {{#if c.subject_line_3}}
                     <div style="margin-top:10px;"><strong>subject_line_3</strong></div>
                     <pre style="white-space: pre-wrap;">{{c.subject_line_3}}</pre>
+                  {{/if}}
+                  {{#if c.regular_digest}}
+                    <div style="margin-top:12px; margin-bottom:6px;"><strong>regular digest</strong></div>
+                    <pre style="white-space: pre-wrap;">vsl_direct: {{c.vsl_direct}}
+vsl_ignore_min_emails: {{c.vsl_ignore_min_emails}}
+vsl_skip_coinflip: {{c.vsl_skip_coinflip}}
+vsl_allowed_sources: {{#if c.vsl_allowed_sources.length}}{{#each c.vsl_allowed_sources as |src|}}{{src}} {{/each}}{{else}}(any){{/if}}</pre>
                   {{/if}}
                   {{#if c.from_name}}
                     <div style="margin-top:10px;"><strong>from_name</strong></div>
@@ -533,7 +608,7 @@
 
           {{#if c.last_error}}
             <tr>
-              <td colspan="11">
+              <td colspan="13">
                 <div class="alert alert-error">
                   <strong>Last error:</strong> {{c.last_error}}
                 </div>

@@ -55,9 +55,10 @@ module Jobs
 
         chosen_topic_ids = normalize_int_array(chosen_topic_ids)
 
-        has_custom_html = campaign.custom_html_body.to_s.strip.present?
+        regular_digest = campaign.regular_digest == true
+        has_custom_html = !regular_digest && campaign.custom_html_body.to_s.strip.present?
 
-        if chosen_topic_ids.blank? && !has_custom_html
+        if !regular_digest && chosen_topic_ids.blank? && !has_custom_html
           picked = ::DigestCampaigns.pick_random_topic_set(campaign.topic_sets)
           if picked.blank?
             mark_failed(id, "Campaign has no topic sets configured")
@@ -78,21 +79,46 @@ module Jobs
         end
 
         begin
-          message =
-            UserNotifications.digest(
-              user,
-              campaign_topic_ids: chosen_topic_ids,
-              campaign_key: campaign_key.to_s,
-              campaign_id: campaign.id,
-              campaign_since: campaign.send_at,
-              campaign_custom_html_body: (has_custom_html ? campaign.custom_html_body : nil),
-              campaign_preheader_line_1: (has_custom_html ? campaign.preheader_line_1 : nil),
-              campaign_preheader_line_2: (has_custom_html ? campaign.preheader_line_2 : nil),
-              campaign_subject_line_1: campaign.subject_line_1,
-              campaign_subject_line_2: campaign.subject_line_2,
-              campaign_subject_line_3: campaign.subject_line_3,
-              campaign_from_name: campaign.from_name
-            )
+          digest_args = {
+            campaign_topic_ids: chosen_topic_ids,
+            campaign_key: campaign_key.to_s,
+            campaign_id: campaign.id,
+            campaign_since: campaign.send_at,
+            campaign_custom_html_body: (has_custom_html ? campaign.custom_html_body : nil),
+            campaign_preheader_line_1: (has_custom_html ? campaign.preheader_line_1 : nil),
+            campaign_preheader_line_2: (has_custom_html ? campaign.preheader_line_2 : nil),
+            campaign_subject_line_1: campaign.subject_line_1,
+            campaign_subject_line_2: campaign.subject_line_2,
+            campaign_subject_line_3: campaign.subject_line_3,
+            campaign_from_name: campaign.from_name
+          }
+
+          vsl_result = nil
+          if regular_digest
+            # Regular digest: no campaign topics/HTML, so the extension falls through to core's
+            # UserNotifications#digest (and every digest plugin hooked into it). The VSL override
+            # tells promo-digest-injector how to run its VSL campaign flow for this send.
+            message, override =
+              ::DigestCampaigns.with_vsl_override(::DigestCampaigns.vsl_override_opts_for(campaign)) do
+                # UserNotifications.digest returns a lazy MessageDelivery; build it NOW, while the
+                # override is set (the injector reads it during Topic.for_digest).
+                build_message(user, digest_args)
+              end
+            vsl_result = override[:result]
+          else
+            message = UserNotifications.digest(user, digest_args)
+          end
+
+          # The injector replaced this digest with a VSL campaign row (sent later by the poller).
+          if regular_digest && vsl_result.is_a?(Hash) && vsl_result[:queued]
+            mark_status(id, "vsl_redirected", vsl_note(vsl_result))
+            next
+          end
+
+          if regular_digest && empty_digest?(message)
+            mark_status(id, "skipped_no_digest", "Regular digest produced no email (no eligible topics)")
+            next
+          end
 
           Email::Sender.new(message, :digest).send
           Discourse.redis.incr(rate_key)
@@ -148,6 +174,34 @@ module Jobs
       else
         Array(v).map(&:to_i).select { |n| n > 0 }
       end
+    end
+
+    def build_message(user, digest_args)
+      message = UserNotifications.digest(user, digest_args)
+      message.respond_to?(:__getobj__) ? message.__getobj__ : message
+    end
+
+    def empty_digest?(message)
+      real = message.respond_to?(:__getobj__) ? message.__getobj__ : message
+      real.nil? || real.is_a?(ActionMailer::Base::NullMail)
+    rescue
+      false
+    end
+
+    def vsl_note(res)
+      "VSL campaign queued: vsl_id=#{res[:vsl_id]} source=#{res[:source].to_s.inspect} " \
+        "campaign=#{res[:campaign_key]} mode=#{res[:selection_mode]} reason=#{res[:reason]}"
+    end
+
+    def mark_status(id, status, note)
+      DB.exec(<<~SQL, id: id, status: status.to_s, note: note.to_s)
+        UPDATE #{::DigestCampaigns::QUEUE_TABLE}
+        SET status = :status,
+            locked_at = NULL,
+            updated_at = NOW(),
+            last_error = NULLIF(:note, '')
+        WHERE id = :id
+      SQL
     end
 
     def digest_unsubscribed?(user)

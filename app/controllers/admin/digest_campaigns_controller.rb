@@ -51,7 +51,9 @@ module Admin
           processing_count: queue_count(c.campaign_key, "processing"),
           sent_count: queue_count(c.campaign_key, "sent"),
           failed_count: queue_count(c.campaign_key, "failed"),
-          skipped_unsubscribed_count: queue_count(c.campaign_key, "skipped_unsubscribed")
+          skipped_unsubscribed_count: queue_count(c.campaign_key, "skipped_unsubscribed"),
+          vsl_redirected_count: queue_count(c.campaign_key, "vsl_redirected"),
+          skipped_no_digest_count: queue_count(c.campaign_key, "skipped_no_digest")
         )
       end
 
@@ -100,10 +102,8 @@ module Admin
       set3 = ::DigestCampaigns.parse_topic_set_csv(params[:topic_set_3])
       topic_sets = [set1, set2, set3].reject(&:blank?)
 
-      if custom_html_body.to_s.strip.blank?
-        raise ArgumentError, "You must provide at least one topic set (topic_set_1/2/3) OR a custom_html_body" if topic_sets.empty?
-      end
-      raise ArgumentError, "You can provide at most 3 topic sets" if topic_sets.length > 3
+      regular = regular_digest_options(params)
+      validate_content!(regular[:regular_digest], custom_html_body, topic_sets)
 
       send_at = parse_send_at(params[:send_at])
       test_email = params[:test_email].to_s.strip
@@ -120,7 +120,8 @@ module Admin
         subject_line_1: subject_line_1,
         subject_line_2: subject_line_2,
         subject_line_3: subject_line_3,
-        from_name: from_name.presence
+        from_name: from_name.presence,
+        **regular
       )
       c.save!
 
@@ -216,10 +217,8 @@ module Admin
       set3 = ::DigestCampaigns.parse_topic_set_csv(params[:topic_set_3])
       topic_sets = [set1, set2, set3].reject(&:blank?)
 
-      if custom_html_body.to_s.strip.blank?
-        raise ArgumentError, "You must provide at least one topic set (topic_set_1/2/3) OR a custom_html_body" if topic_sets.empty?
-      end
-      raise ArgumentError, "You can provide at most 3 topic sets" if topic_sets.length > 3
+      regular = regular_digest_options(params)
+      validate_content!(regular[:regular_digest], custom_html_body, topic_sets)
 
       test_email = params.require(:test_email).to_s.strip
       send_at = parse_send_at(params[:send_at])
@@ -237,7 +236,9 @@ module Admin
           subject_line_1: subject_line_1,
           subject_line_2: subject_line_2,
           subject_line_3: subject_line_3,
-          from_name: from_name.presence
+          from_name: from_name.presence,
+          regular_digest: regular[:regular_digest],
+          vsl_override: vsl_override_from_options(regular)
         )
       render_json_dump(ok: true, test: res)
     rescue => e
@@ -523,6 +524,43 @@ module Admin
       DigestCampaigns::Campaign.find(params.require(:id))
     end
 
+    # Regular-digest options from the create/test-draft form. The vsl_* sub-options only
+    # count when regular_digest is on.
+    def regular_digest_options(p)
+      regular = truthy_param?(p[:regular_digest], default: false)
+      {
+        regular_digest: regular,
+        vsl_direct: regular && truthy_param?(p[:vsl_direct], default: false),
+        vsl_skip_coinflip: regular && truthy_param?(p[:vsl_skip_coinflip], default: false),
+        vsl_ignore_min_emails: regular && truthy_param?(p[:vsl_ignore_min_emails], default: false),
+        vsl_allowed_sources: regular ? ::DigestCampaigns.parse_source_list(p[:vsl_allowed_sources]) : []
+      }
+    end
+
+    def vsl_override_from_options(opts)
+      {
+        direct: opts[:vsl_direct],
+        skip_coinflip: opts[:vsl_skip_coinflip],
+        ignore_min_emails: opts[:vsl_ignore_min_emails],
+        allowed_sources: opts[:vsl_allowed_sources]
+      }
+    end
+
+    def validate_content!(regular_digest, custom_html_body, topic_sets)
+      if regular_digest
+        if custom_html_body.to_s.strip.present? || topic_sets.present?
+          raise ArgumentError,
+                "A regular digest campaign sends the normal digest: leave custom_html_body and topic sets empty"
+        end
+        return
+      end
+
+      if custom_html_body.to_s.strip.blank?
+        raise ArgumentError, "You must provide at least one topic set (topic_set_1/2/3) OR a custom_html_body" if topic_sets.empty?
+      end
+      raise ArgumentError, "You can provide at most 3 topic sets" if topic_sets.length > 3
+    end
+
     def queue_count(campaign_key, status)
       DB.query_single(<<~SQL, k: campaign_key.to_s, s: status.to_s).first.to_i
         SELECT COUNT(*) FROM #{::DigestCampaigns::QUEUE_TABLE}
@@ -658,8 +696,8 @@ module Admin
     def send_test_now!(campaign, test_email)
       chosen = ::DigestCampaigns.pick_random_topic_set(campaign.topic_sets)
 
-      # Custom HTML campaigns do not require topic sets
-      if campaign.custom_html_body.to_s.strip.blank?
+      # Custom HTML and regular-digest campaigns do not require topic sets
+      if !campaign.regular_digest && campaign.custom_html_body.to_s.strip.blank?
         raise "Campaign has no topic sets configured" if chosen.blank?
       end
 
@@ -675,7 +713,9 @@ module Admin
         subject_line_1: campaign.subject_line_1,
         subject_line_2: campaign.subject_line_2,
         subject_line_3: campaign.subject_line_3,
-        from_name: campaign.from_name
+        from_name: campaign.from_name,
+        regular_digest: campaign.regular_digest,
+        vsl_override: ::DigestCampaigns.vsl_override_opts_for(campaign)
       )
     end
 
@@ -691,32 +731,48 @@ module Admin
       subject_line_1: nil,
       subject_line_2: nil,
       subject_line_3: nil,
-      from_name: nil
+      from_name: nil,
+      regular_digest: false,
+      vsl_override: nil
     )
       user = User.find_by_email(test_email)
       raise "Test email not found as a Discourse user: #{test_email}" if user.nil?
 
-      if custom_html_body.to_s.strip.blank?
+      if !regular_digest && custom_html_body.to_s.strip.blank?
         raise "No topic ids provided" if topic_ids.blank?
       end
 
-      message =
-        UserNotifications.digest(
-          user,
-          campaign_topic_ids: topic_ids,
-          campaign_key: campaign_key.to_s,
-          campaign_since: send_at,
-          campaign_id: campaign_id,
-          campaign_custom_html_body: custom_html_body,
-          campaign_preheader_line_1: preheader_line_1,
-          campaign_preheader_line_2: preheader_line_2,
-          campaign_subject_line_1: subject_line_1,
-          campaign_subject_line_2: subject_line_2,
-          campaign_subject_line_3: subject_line_3,
-          campaign_from_name: from_name
-        )
+      digest_args = {
+        campaign_topic_ids: (regular_digest ? [] : topic_ids),
+        campaign_key: campaign_key.to_s,
+        campaign_since: send_at,
+        campaign_id: campaign_id,
+        campaign_custom_html_body: (regular_digest ? nil : custom_html_body),
+        campaign_preheader_line_1: preheader_line_1,
+        campaign_preheader_line_2: preheader_line_2,
+        campaign_subject_line_1: subject_line_1,
+        campaign_subject_line_2: subject_line_2,
+        campaign_subject_line_3: subject_line_3,
+        campaign_from_name: from_name
+      }
 
-      Email::Sender.new(message, :digest).send
+      vsl_result = nil
+      if regular_digest
+        # Build the (lazy) MessageDelivery inside the override so the injector sees it.
+        message, override =
+          ::DigestCampaigns.with_vsl_override(vsl_override || {}) do
+            m = UserNotifications.digest(user, digest_args)
+            m.respond_to?(:__getobj__) ? m.__getobj__ : m
+          end
+        vsl_result = override[:result]
+      else
+        message = UserNotifications.digest(user, digest_args)
+      end
+
+      vsl_queued = vsl_result.is_a?(Hash) && vsl_result[:queued] == true
+      # When the injector redirected the digest to a VSL campaign, there is no digest email to
+      # send here: the VSL campaign row it queued is sent by the normal poller.
+      Email::Sender.new(message, :digest).send unless vsl_queued
 
       {
         sent_to: test_email,
@@ -724,7 +780,12 @@ module Admin
         chosen_topic_ids: topic_ids,
         campaign_key: campaign_key.to_s,
         campaign_id: campaign_id,
-        has_custom_html: custom_html_body.to_s.strip.present?
+        has_custom_html: custom_html_body.to_s.strip.present?,
+        regular_digest: regular_digest,
+        vsl_queued: vsl_queued,
+        vsl_campaign_key: (vsl_queued ? vsl_result[:campaign_key] : nil),
+        vsl_source: (vsl_queued ? vsl_result[:source] : nil),
+        vsl_reason: (regular_digest ? vsl_result&.dig(:reason) : nil)
       }
     end
 

@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 # name: discourse-digest-campaigns
-# about: Admin-defined digest campaigns from a SQL segment + up to 3 random topic sets. Populate once on create; optional scheduled send_at; throttled batched sending; admin UI.
-# version: 1.10.2
+# about: Admin-defined digest campaigns from a SQL segment + up to 3 random topic sets (or a "regular digest" mode that sends the normal digest, with optional VSL-flow overrides for promo-digest-injector). Populate once on create; optional scheduled send_at; throttled batched sending; admin UI.
+# version: 1.11.0
 # authors: you
 # required_version: 3.0.0
 
@@ -39,6 +39,41 @@ after_initialize do
       s = csv.to_s.strip
       return [] if s.blank?
       s.split(",").map { |x| x.strip }.reject(&:blank?).map(&:to_i).select { |n| n > 0 }
+    end
+
+    # Accepts a comma / newline / pipe separated string (or an array) and returns a
+    # de-duplicated (case-insensitive) list of non-blank source names.
+    def self.parse_source_list(raw)
+      items = raw.is_a?(Array) ? raw : raw.to_s.split(/[\n,|]+/)
+      items.map { |x| x.to_s.strip }.reject(&:blank?).uniq { |x| x.downcase }
+    end
+
+    # Runs the block with the VSL override that promo-digest-injector reads from
+    # Thread.current[:digest_campaign_vsl_override]. `opts` keys:
+    #   direct, skip_coinflip, ignore_min_emails, allowed_sources
+    # The injector writes its outcome to override[:result] (a Hash with :queued etc.).
+    # Returns [block_result, override_hash].
+    def self.with_vsl_override(opts)
+      override = {
+        direct: opts[:direct] == true,
+        skip_coinflip: opts[:skip_coinflip] == true,
+        ignore_min_emails: opts[:ignore_min_emails] == true,
+        allowed_sources: parse_source_list(opts[:allowed_sources]),
+        result: nil
+      }
+      Thread.current[:digest_campaign_vsl_override] = override
+      [yield, override]
+    ensure
+      Thread.current[:digest_campaign_vsl_override] = nil
+    end
+
+    def self.vsl_override_opts_for(campaign)
+      {
+        direct: campaign.vsl_direct,
+        skip_coinflip: campaign.vsl_skip_coinflip,
+        ignore_min_emails: campaign.vsl_ignore_min_emails,
+        allowed_sources: campaign.vsl_allowed_sources
+      }
     end
 
     def self.pick_random_topic_set(topic_sets)
