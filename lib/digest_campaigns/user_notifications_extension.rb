@@ -1262,18 +1262,27 @@ module ::DigestCampaigns
     def self.plain_text_from_post(post)
       return "" if post.nil?
 
-      raw = post.respond_to?(:raw) ? post.raw.to_s : ""
-      raw = raw.strip
-      return raw unless raw.empty?
+      # Prefer cooked HTML so images / uploads / oneboxes can be dropped cleanly.
+      # (Using raw leaked markdown like "![logo](upload://...)" into the preheader.)
+      cooked = post.respond_to?(:cooked) ? post.cooked.to_s.strip : ""
 
-      cooked = post.respond_to?(:cooked) ? post.cooked.to_s : ""
-      return "" if cooked.empty?
+      text =
+        if cooked.present? && Nokogiri
+          doc = Nokogiri::HTML.fragment(cooked)
+          doc.css("img, picture, video, audio, iframe, svg, script, style, aside.onebox, .lightbox-wrapper, .meta").remove
+          doc.text.to_s
+        else
+          raw = post.respond_to?(:raw) ? post.raw.to_s : ""
+          raw = cooked.gsub(/<[^>]+>/, " ") if raw.strip.empty?
+          raw
+            .gsub(/!\[[^\]]*\]\([^)]*\)/, " ")      # markdown images
+            .gsub(/<img\b[^>]*>/i, " ")             # html images
+            .gsub(/\[([^\]]*)\]\([^)]*\)/, '\1')    # markdown links -> link text
+            .gsub(/<[^>]+>/, " ")
+        end
 
-      if Nokogiri
-        Nokogiri::HTML(cooked).text.to_s
-      else
-        cooked.gsub(/<[^>]+>/, " ")
-      end
+      # Drop any bare URLs left over (upload://, http(s)://)
+      text.gsub(%r{(?:https?|upload)://\S+}i, " ")
     rescue
       ""
     end
@@ -1369,6 +1378,7 @@ module ::DigestCampaigns
         elsif first_topic
           preview = ::DigestCampaigns::UserNotificationsExtension.plain_text_from_post(first_post)
           preview = ::DigestCampaigns::DigestAppendData.normalize_spaces(preview)
+          preview = first_topic.title.to_s.strip if preview.blank?
           preview = ::DigestCampaigns::UserNotificationsExtension.smart_trim_preview(preview, 200)
           @preheader_text = preview
         else
@@ -1388,6 +1398,7 @@ module ::DigestCampaigns
 
         preview = ::DigestCampaigns::UserNotificationsExtension.plain_text_from_post(first_post)
         preview = ::DigestCampaigns::DigestAppendData.normalize_spaces(preview)
+        preview = first_topic.title.to_s.strip if preview.blank?
         preview = ::DigestCampaigns::UserNotificationsExtension.smart_trim_preview(preview, 200)
         @preheader_text = preview
       else
