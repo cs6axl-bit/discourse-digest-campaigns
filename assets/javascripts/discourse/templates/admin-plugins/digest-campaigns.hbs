@@ -182,6 +182,33 @@
     </div>
 
     <div class="control-group">
+      <label class="control-label">SMTP providers (optional)</label>
+      <div class="controls">
+        <label style="display:block; font-size:12px; color:#555; margin-bottom:3px;">Use only these provider ids</label>
+        <Input @value={{this.smtp_only_provider_ids}} class="input-xxlarge" placeholder="e.g. sendgrid_1,mailgun_2 (empty = any provider)" />
+
+        <label style="display:block; font-size:12px; color:#555; margin:8px 0 3px;">Avoid these provider ids</label>
+        <Input @value={{this.smtp_avoid_provider_ids}} class="input-xxlarge" placeholder="e.g. ses_1 (empty = avoid none)" />
+
+        <div class="help-block">
+          Comma-separated <code>discourse-multi-smtp-router</code> provider ids (exact match). The router's normal
+          logic (domain override, metrics, weighted, random) still runs, but only over the allowed providers.
+          If no allowed provider is enabled at send time the email is not sent and the queue row is marked failed.
+          {{#if this.meta.smtp_router_enabled}}
+            Enabled providers:
+            {{#if this.meta.smtp_provider_ids.length}}
+              {{#each this.meta.smtp_provider_ids as |pid|}}<code>{{pid}}</code> {{/each}}
+            {{else}}
+              (none)
+            {{/if}}
+          {{else}}
+            <strong>discourse-multi-smtp-router is not enabled</strong>, so these fields can't be used.
+          {{/if}}
+        </div>
+      </div>
+    </div>
+
+    <div class="control-group">
       <label class="control-label">topic_set_1</label>
       <div class="controls">
         <Input @value={{this.topic_set_1}} class="input-xxlarge" placeholder="3782,1351,1423,1374" />
@@ -582,6 +609,14 @@
 vsl_ignore_min_emails: {{c.vsl_ignore_min_emails}}
 vsl_skip_coinflip: {{c.vsl_skip_coinflip}}
 vsl_allowed_sources: {{#if c.vsl_allowed_sources.length}}{{#each c.vsl_allowed_sources as |src|}}{{src}} {{/each}}{{else}}(any){{/if}}</pre>
+                  {{/if}}
+                  {{#if c.smtp_only_provider_ids.length}}
+                    <div style="margin-top:10px;"><strong>SMTP use only</strong></div>
+                    <pre style="white-space: pre-wrap;">{{#each c.smtp_only_provider_ids as |pid|}}{{pid}} {{/each}}</pre>
+                  {{/if}}
+                  {{#if c.smtp_avoid_provider_ids.length}}
+                    <div style="margin-top:10px;"><strong>SMTP avoid</strong></div>
+                    <pre style="white-space: pre-wrap;">{{#each c.smtp_avoid_provider_ids as |pid|}}{{pid}} {{/each}}</pre>
                   {{/if}}
                   {{#if c.from_name}}
                     <div style="margin-top:10px;"><strong>from_name</strong></div>

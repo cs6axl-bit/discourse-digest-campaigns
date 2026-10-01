@@ -120,7 +120,21 @@ module Jobs
             next
           end
 
+          message =
+            ::DigestCampaigns.apply_smtp_provider_constraints!(
+              message,
+              **::DigestCampaigns.smtp_provider_opts_for(campaign),
+            )
+
           Email::Sender.new(message, :digest).send
+
+          # The router refused to deliver: no enabled provider satisfies the campaign's
+          # use-only / avoid lists. Nothing went out, so don't count it as sent.
+          if (blocked = ::DigestCampaigns.smtp_constraints_block_reason(message))
+            mark_failed(id, "Not sent: #{blocked}")
+            next
+          end
+
           Discourse.redis.incr(rate_key)
 
           if SiteSetting.digest_campaigns_update_digest_attempted_at_on_send

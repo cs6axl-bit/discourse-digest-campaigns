@@ -63,7 +63,9 @@ module Admin
           page: page,
           per_page: per_page,
           total: total,
-          total_pages: total_pages
+          total_pages: total_pages,
+          smtp_router_enabled: ::DigestCampaigns.smtp_router_active?,
+          smtp_provider_ids: ::DigestCampaigns.smtp_router_provider_ids
         }
       )
     end
@@ -104,6 +106,7 @@ module Admin
 
       regular = regular_digest_options(params)
       validate_content!(regular[:regular_digest], custom_html_body, topic_sets)
+      providers = smtp_provider_options(params)
 
       send_at = parse_send_at(params[:send_at])
       test_email = params[:test_email].to_s.strip
@@ -121,7 +124,8 @@ module Admin
         subject_line_2: subject_line_2,
         subject_line_3: subject_line_3,
         from_name: from_name.presence,
-        **regular
+        **regular,
+        **providers
       )
       c.save!
 
@@ -219,6 +223,7 @@ module Admin
 
       regular = regular_digest_options(params)
       validate_content!(regular[:regular_digest], custom_html_body, topic_sets)
+      providers = smtp_provider_options(params)
 
       test_email = params.require(:test_email).to_s.strip
       send_at = parse_send_at(params[:send_at])
@@ -238,7 +243,11 @@ module Admin
           subject_line_3: subject_line_3,
           from_name: from_name.presence,
           regular_digest: regular[:regular_digest],
-          vsl_override: vsl_override_from_options(regular)
+          vsl_override: vsl_override_from_options(regular),
+          smtp_providers: {
+            only: providers[:smtp_only_provider_ids],
+            avoid: providers[:smtp_avoid_provider_ids]
+          }
         )
       render_json_dump(ok: true, test: res)
     rescue => e
@@ -537,6 +546,15 @@ module Admin
       }
     end
 
+    # SMTP provider use-only / avoid lists from the create/test-draft form (validated
+    # against the providers currently enabled in discourse-multi-smtp-router).
+    def smtp_provider_options(p)
+      ::DigestCampaigns.smtp_provider_constraints_from(
+        p[:smtp_only_provider_ids],
+        p[:smtp_avoid_provider_ids]
+      )
+    end
+
     def vsl_override_from_options(opts)
       {
         direct: opts[:vsl_direct],
@@ -715,7 +733,8 @@ module Admin
         subject_line_3: campaign.subject_line_3,
         from_name: campaign.from_name,
         regular_digest: campaign.regular_digest,
-        vsl_override: ::DigestCampaigns.vsl_override_opts_for(campaign)
+        vsl_override: ::DigestCampaigns.vsl_override_opts_for(campaign),
+        smtp_providers: ::DigestCampaigns.smtp_provider_opts_for(campaign)
       )
     end
 
@@ -733,7 +752,8 @@ module Admin
       subject_line_3: nil,
       from_name: nil,
       regular_digest: false,
-      vsl_override: nil
+      vsl_override: nil,
+      smtp_providers: nil
     )
       user = User.find_by_email(test_email)
       raise "Test email not found as a Discourse user: #{test_email}" if user.nil?
@@ -772,7 +792,14 @@ module Admin
       vsl_queued = vsl_result.is_a?(Hash) && vsl_result[:queued] == true
       # When the injector redirected the digest to a VSL campaign, there is no digest email to
       # send here: the VSL campaign row it queued is sent by the normal poller.
-      Email::Sender.new(message, :digest).send unless vsl_queued
+      unless vsl_queued
+        message =
+          ::DigestCampaigns.apply_smtp_provider_constraints!(message, **(smtp_providers || {}))
+        Email::Sender.new(message, :digest).send
+        if (blocked = ::DigestCampaigns.smtp_constraints_block_reason(message))
+          raise "Test email not sent: #{blocked}"
+        end
+      end
 
       {
         sent_to: test_email,

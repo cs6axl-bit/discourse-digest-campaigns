@@ -40,6 +40,11 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
   @tracked vsl_ignore_min_emails = false;
   @tracked vsl_allowed_sources = "";
 
+  // discourse-multi-smtp-router provider ids (comma / newline separated).
+  // only: send exclusively through these; avoid: never send through these.
+  @tracked smtp_only_provider_ids = "";
+  @tracked smtp_avoid_provider_ids = "";
+
   // Exclude users who have queue rows in the last X days (on by default)
   @tracked exclude_recent_from_queue = true;
   @tracked exclude_recent_from_queue_days = 1;
@@ -126,6 +131,8 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
       this.vsl_skip_coinflip = !!c.vsl_skip_coinflip;
       this.vsl_ignore_min_emails = !!c.vsl_ignore_min_emails;
       this.vsl_allowed_sources = (c.vsl_allowed_sources || []).join("\n");
+      this.smtp_only_provider_ids = (c.smtp_only_provider_ids || []).join(",");
+      this.smtp_avoid_provider_ids = (c.smtp_avoid_provider_ids || []).join(",");
 
       this.notice = `Copied fields from campaign id=${id} (${c.campaign_key}). Review and adjust before creating.`;
     } catch (e) {
@@ -583,6 +590,13 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
     };
   }
 
+  smtpProviderPayload() {
+    return {
+      smtp_only_provider_ids: this.smtp_only_provider_ids,
+      smtp_avoid_provider_ids: this.smtp_avoid_provider_ids,
+    };
+  }
+
   @action
   async testDraft() {
     this.clearMessages();
@@ -609,6 +623,7 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
         from_name: this.from_name,
         test_email: email,
         ...this.regularDigestPayload(),
+        ...this.smtpProviderPayload(),
       };
 
       if (this.send_at && this.send_at.trim().length > 0) {
@@ -667,6 +682,7 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
         exclude_recent_emailed: this.exclude_recent_emailed,
         exclude_recent_emailed_days: this.exclude_recent_emailed_days,
         ...this.regularDigestPayload(),
+        ...this.smtpProviderPayload(),
       };
 
       if (this.send_at && this.send_at.trim().length > 0) {
@@ -696,6 +712,8 @@ export default class AdminPluginsDigestCampaignsController extends Controller {
       this.vsl_skip_coinflip = false;
       this.vsl_ignore_min_emails = false;
       this.vsl_allowed_sources = "";
+      this.smtp_only_provider_ids = "";
+      this.smtp_avoid_provider_ids = "";
       this.hardsale_email_html_id = "";
       this.bundle_email_id = "";
       this.vsl2html_email_id = "";

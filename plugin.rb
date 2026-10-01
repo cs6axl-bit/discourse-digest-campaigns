@@ -2,7 +2,7 @@
 
 # name: discourse-digest-campaigns
 # about: Admin-defined digest campaigns from a SQL segment + up to 3 random topic sets (or a "regular digest" mode that sends the normal digest, with optional VSL-flow overrides for promo-digest-injector). Populate once on create; optional scheduled send_at; throttled batched sending; admin UI.
-# version: 1.11.0
+# version: 1.12.0
 # authors: you
 # required_version: 3.0.0
 
@@ -74,6 +74,113 @@ after_initialize do
         ignore_min_emails: campaign.vsl_ignore_min_emails,
         allowed_sources: campaign.vsl_allowed_sources
       }
+    end
+
+    # ------------------------------------------------------------------
+    # Per-campaign SMTP provider constraints (discourse-multi-smtp-router)
+    # ------------------------------------------------------------------
+    # The router reads these headers in its before_email_send hook, narrows its provider
+    # pool, and strips them before delivery. Names must match MultiSmtpRouter::HDR_ONLY_PROVIDERS
+    # / HDR_AVOID_PROVIDERS (kept as literals so load order between the plugins doesn't matter).
+    SMTP_ONLY_PROVIDERS_HEADER = "X-Multi-SMTP-Router-Only-Providers"
+    SMTP_AVOID_PROVIDERS_HEADER = "X-Multi-SMTP-Router-Avoid-Providers"
+    SMTP_ROUTING_REASON_HEADER = "X-Multi-SMTP-Router-Routing-Reason"
+    SMTP_NO_POOL_REASON_PREFIX = "campaign_providers_no_pool"
+
+    # Provider ids are matched exactly (case-sensitive) by the router, so only trim + de-dupe.
+    def self.parse_provider_id_list(raw)
+      items = raw.is_a?(Array) ? raw : raw.to_s.split(/[\n,|]+/)
+      items.map { |x| x.to_s.strip }.reject(&:blank?).uniq
+    end
+
+    def self.smtp_router_active?
+      defined?(::MultiSmtpRouter) && ::MultiSmtpRouter.enabled?
+    rescue
+      false
+    end
+
+    # Enabled provider ids configured in the router (empty when the router isn't installed/enabled).
+    def self.smtp_router_provider_ids
+      return [] unless smtp_router_active?
+      ::MultiSmtpRouter.providers.map { |p| p[:id].to_s }.reject(&:blank?).uniq
+    rescue
+      []
+    end
+
+    # Validates the lists for a campaign being created / test-sent. Returns
+    # { smtp_only_provider_ids: [...], smtp_avoid_provider_ids: [...] }.
+    def self.smtp_provider_constraints_from(only_raw, avoid_raw)
+      only = parse_provider_id_list(only_raw)
+      avoid = parse_provider_id_list(avoid_raw)
+
+      if only.present? || avoid.present?
+        unless smtp_router_active?
+          raise ArgumentError,
+                "SMTP provider constraints need discourse-multi-smtp-router installed and enabled"
+        end
+
+        known = smtp_router_provider_ids
+        unknown = (only + avoid).uniq - known
+        if unknown.any?
+          raise ArgumentError,
+                "Unknown or disabled SMTP provider id(s): #{unknown.join(', ')} " \
+                  "(enabled providers: #{known.join(', ').presence || 'none'})"
+        end
+
+        both = only & avoid
+        if both.any?
+          raise ArgumentError, "Provider id(s) in both 'use only' and 'avoid': #{both.join(', ')}"
+        end
+
+        if only.present? && (only - avoid).empty?
+          raise ArgumentError, "No provider left to send with after applying 'avoid'"
+        end
+      end
+
+      { smtp_only_provider_ids: only, smtp_avoid_provider_ids: avoid }
+    end
+
+    def self.smtp_provider_opts_for(campaign)
+      {
+        only: Array(campaign.smtp_only_provider_ids),
+        avoid: Array(campaign.smtp_avoid_provider_ids)
+      }
+    end
+
+    # Unwraps a lazy ActionMailer::MessageDelivery into the Mail::Message.
+    def self.real_message(message)
+      message.respond_to?(:__getobj__) ? message.__getobj__ : message
+    end
+
+    # Stamps the constraint headers onto the message (call right before Email::Sender).
+    # Raises when constraints are set but the router can't honor them, so the send is not
+    # silently routed through the default SMTP.
+    def self.apply_smtp_provider_constraints!(message, only: [], avoid: [])
+      only = parse_provider_id_list(only)
+      avoid = parse_provider_id_list(avoid)
+      return message if only.empty? && avoid.empty?
+
+      unless smtp_router_active?
+        raise "Campaign has SMTP provider constraints but discourse-multi-smtp-router is not enabled"
+      end
+
+      real = real_message(message)
+      return message unless real.respond_to?(:header)
+
+      real.header[SMTP_ONLY_PROVIDERS_HEADER] = only.join(",") if only.any?
+      real.header[SMTP_AVOID_PROVIDERS_HEADER] = avoid.join(",") if avoid.any?
+      real
+    end
+
+    # After Email::Sender#send: the router's reason when it refused to deliver because no
+    # provider satisfied the campaign constraints, else nil.
+    def self.smtp_constraints_block_reason(message)
+      real = real_message(message)
+      return nil unless real.respond_to?(:header)
+      reason = real.header[SMTP_ROUTING_REASON_HEADER]&.value.to_s
+      reason.start_with?(SMTP_NO_POOL_REASON_PREFIX) ? reason : nil
+    rescue
+      nil
     end
 
     def self.pick_random_topic_set(topic_sets)
