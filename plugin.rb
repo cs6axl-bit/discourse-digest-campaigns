@@ -67,6 +67,44 @@ after_initialize do
       Thread.current[:digest_campaign_vsl_override] = nil
     end
 
+    # ------------------------------------------------------------------
+    # Regular-digest campaign tracking (digest-append3-links-and-trim-excerpt + digest-report2)
+    # ------------------------------------------------------------------
+    # A regular-digest campaign falls through to core's digest, where the append plugin
+    # (::DigestAppendData) stamps a purely random 20-digit email_id on the links. digest-report2
+    # only derives campaignid from campaign-shaped ids ("0000" + cid + "000" + random), so those
+    # sends were logged with campaignid NULL. While the block runs, the append plugin's
+    # generate_email_id returns a campaign-shaped id for this campaign instead.
+    module AppendEmailIdOverride
+      def generate_email_id(*args, **kwargs)
+        cid = Thread.current[:digest_campaign_regular_campaign_id].to_i
+        if cid > 0
+          ::DigestCampaigns::DigestAppendData.generate_email_id(campaign_id: cid)
+        else
+          super
+        end
+      end
+    end
+
+    def self.patch_append_email_id!
+      return false unless defined?(::DigestAppendData) && ::DigestAppendData.respond_to?(:generate_email_id)
+      sc = ::DigestAppendData.singleton_class
+      sc.prepend(AppendEmailIdOverride) unless sc.ancestors.include?(AppendEmailIdOverride)
+      true
+    rescue => e
+      Rails.logger.warn("[digest-campaigns] append email_id patch failed: #{e.class}: #{e.message}")
+      false
+    end
+
+    def self.with_regular_digest_campaign_id(campaign_id)
+      # Patched lazily so plugin load order doesn't matter.
+      patch_append_email_id!
+      Thread.current[:digest_campaign_regular_campaign_id] = campaign_id
+      yield
+    ensure
+      Thread.current[:digest_campaign_regular_campaign_id] = nil
+    end
+
     def self.vsl_override_opts_for(campaign)
       {
         direct: campaign.vsl_direct,

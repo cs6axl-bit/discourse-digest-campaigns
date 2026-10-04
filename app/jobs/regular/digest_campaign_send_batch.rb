@@ -102,7 +102,9 @@ module Jobs
               ::DigestCampaigns.with_vsl_override(::DigestCampaigns.vsl_override_opts_for(campaign)) do
                 # UserNotifications.digest returns a lazy MessageDelivery; build it NOW, while the
                 # override is set (the injector reads it during Topic.for_digest).
-                build_message(user, digest_args)
+                ::DigestCampaigns.with_regular_digest_campaign_id(campaign.id) do
+                  build_message(user, digest_args)
+                end
               end
             vsl_result = override[:result]
           else

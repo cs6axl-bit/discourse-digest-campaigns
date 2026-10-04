@@ -781,8 +781,10 @@ module Admin
         # Build the (lazy) MessageDelivery inside the override so the injector sees it.
         message, override =
           ::DigestCampaigns.with_vsl_override(vsl_override || {}) do
-            m = UserNotifications.digest(user, digest_args)
-            m.respond_to?(:__getobj__) ? m.__getobj__ : m
+            ::DigestCampaigns.with_regular_digest_campaign_id(campaign_id) do
+              m = UserNotifications.digest(user, digest_args)
+              m.respond_to?(:__getobj__) ? m.__getobj__ : m
+            end
           end
         vsl_result = override[:result]
       else
