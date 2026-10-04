@@ -53,6 +53,12 @@ module Jobs
           next
         end
 
+        # Disabled after this row was claimed: hand it back so Enable resumes from here.
+        unless campaign.enabled
+          release_paused_row(id)
+          next
+        end
+
         chosen_topic_ids = normalize_int_array(chosen_topic_ids)
 
         regular_digest = campaign.regular_digest == true
@@ -236,6 +242,19 @@ module Jobs
             updated_at = NOW(),
             last_error = NULL
         WHERE id = :id
+      SQL
+    end
+
+    # Back to queued without counting the claim as a send attempt.
+    def release_paused_row(id)
+      DB.exec(<<~SQL, id: id)
+        UPDATE #{::DigestCampaigns::QUEUE_TABLE}
+        SET status = 'queued',
+            locked_at = NULL,
+            attempts = GREATEST(attempts - 1, 0),
+            updated_at = NOW()
+        WHERE id = :id
+          AND status = 'processing'
       SQL
     end
 

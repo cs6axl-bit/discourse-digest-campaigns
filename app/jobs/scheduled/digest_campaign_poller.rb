@@ -66,21 +66,31 @@ module Jobs
       params = { limit: limit.to_i, now: Time.zone.now }
 
       if only_key.present?
-        where_key_sql = " AND campaign_key = :campaign_key"
+        where_key_sql = " AND qq.campaign_key = :campaign_key"
         params[:campaign_key] = only_key
       end
 
       # IMPORTANT:
       # In your Discourse/MiniSql build, DB.exec returns an Integer (rows affected),
       # so for RETURNING queries we must use DB.query to get rows.
+      #
+      # Disabled campaigns are paused: their queued rows stay queued until re-enabled.
+      # (NOT EXISTS, not a join, so rows of a missing campaign still get claimed and
+      # marked failed by the send job.)
       DB.query(<<~SQL, params).map { |r| r.id.to_i }
         WITH picked AS (
-          SELECT id
-          FROM #{::DigestCampaigns::QUEUE_TABLE}
-          WHERE status = 'queued'
-            AND (not_before IS NULL OR not_before <= :now)
+          SELECT qq.id
+          FROM #{::DigestCampaigns::QUEUE_TABLE} qq
+          WHERE qq.status = 'queued'
+            AND (qq.not_before IS NULL OR qq.not_before <= :now)
+            AND NOT EXISTS (
+              SELECT 1
+              FROM #{::DigestCampaigns::CAMPAIGNS_TABLE} c
+              WHERE c.campaign_key = qq.campaign_key
+                AND c.enabled = FALSE
+            )
           #{where_key_sql}
-          ORDER BY id
+          ORDER BY qq.id
           LIMIT :limit
           FOR UPDATE SKIP LOCKED
         )

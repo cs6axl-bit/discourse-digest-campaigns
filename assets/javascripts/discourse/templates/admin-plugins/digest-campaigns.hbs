@@ -537,9 +537,9 @@
             <td>{{c.skipped_no_digest_count}}</td>
             <td>
               {{#if c.enabled}}
-                <button class="btn" {{on "click" (fn this.disableCampaign c.id)}} disabled={{this.busy}}>Disable</button>
+                <button class="btn" title="Pause sending: queued rows stay queued until re-enabled" {{on "click" (fn this.disableCampaign c.id)}} disabled={{this.busy}}>Disable (pause)</button>
               {{else}}
-                <button class="btn btn-primary" {{on "click" (fn this.enableCampaign c.id)}} disabled={{this.busy}}>Enable</button>
+                <button class="btn btn-primary" title="Resume sending the remaining queued rows" {{on "click" (fn this.enableCampaign c.id)}} disabled={{this.busy}}>Enable (resume)</button>
               {{/if}}
 
               {{!-- Default ON unless explicitly set to false --}}
