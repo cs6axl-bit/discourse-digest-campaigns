@@ -292,6 +292,7 @@ after_initialize do
       get    "/digest-campaigns/bundle-email/:id.json" => "digest_campaigns#bundle_email_html"
       get    "/digest-campaigns/vsl2html-email/:id.json" => "digest_campaigns#vsl2html_email_html"
       get    "/digest-campaigns/web2html-email/:id.json" => "digest_campaigns#web2html_email_html"
+      get    "/digest-campaigns/productcopy-email/:id.json" => "digest_campaigns#productcopy_email_html"
       delete "/digest-campaigns/:id.json" => "digest_campaigns#destroy"
     end
 

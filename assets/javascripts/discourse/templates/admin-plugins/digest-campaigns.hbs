@@ -322,6 +322,18 @@
 
         <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">
           <Input
+            @value={{this.productcopy_email_id}}
+            class="input-medium"
+            placeholder="productcopy_email_outputs id"
+            {{on "input" this.onProductcopyEmailIdInput}}
+          />
+          <button class="btn" {{on "click" this.loadFromProductcopyEmail}} disabled={{this.busy}}>
+            Load from product-copy email id
+          </button>
+        </div>
+
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">
+          <Input
             @value={{this.web2html_email_id}}
             class="input-medium"
             placeholder="webpage2html_email_outputs id"
