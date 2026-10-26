@@ -2,7 +2,7 @@
 
 # name: discourse-digest-campaigns
 # about: Admin-defined digest campaigns from a SQL segment + up to 3 random topic sets (or a "regular digest" mode that sends the normal digest, with optional VSL-flow overrides for promo-digest-injector). Populate once on create; optional scheduled send_at; throttled batched sending; admin UI.
-# version: 1.12.0
+# version: 1.12.1
 # authors: you
 # required_version: 3.0.0
 

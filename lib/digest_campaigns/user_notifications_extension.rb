@@ -115,7 +115,11 @@ module ::DigestCampaigns
       remaining = total_len - (prefix.length + cid.length + mid.length)
       remaining = 1 if remaining < 1
 
-      rnd = SecureRandom.random_number(10**remaining).to_s.rjust(remaining, "0")
+      # 2026-10-26: the random part never starts with "0". The send logger (digest-report2 + its PHP endpoint) reads the
+      # campaign id up to the first "000" at index >= 7; for ids ending in 0 ("1070" + "000") that cut the id short
+      # (logged as 107). With a non-zero first random digit the parsers can take the first "000" that is followed by a
+      # non-zero digit, which is unambiguous.
+      rnd = (SecureRandom.random_number(9 * 10**(remaining - 1)) + 10**(remaining - 1)).to_s
       (prefix + cid + mid + rnd)
     rescue
       # keep format even on failure
