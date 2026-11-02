@@ -1433,7 +1433,7 @@ module ::DigestCampaigns
       elsif has_custom_html
         prefix = SiteSetting.digest_campaigns_subject_prefix.to_s.strip
         prefix = "[Campaign Digest]" if prefix.blank?
-        subject = "#{prefix} #{@campaign_key}".strip
+        subject = prefix
 
         ph_lines = [preheader_line_1, preheader_line_2].map { |x| x.to_s.strip }.reject(&:blank?)
         @preheader_text = ph_lines.first || "Campaign"
@@ -1455,7 +1455,7 @@ module ::DigestCampaigns
           )
         prefix = SiteSetting.digest_campaigns_subject_prefix.to_s.strip
         prefix = "[Campaign Digest]" if prefix.blank?
-        subject = "#{prefix} - #{base_subject} - #{@campaign_key}".strip
+        subject = "#{prefix} - #{base_subject}".strip
 
         @preheader_text = "Campaign Digest"
       end
@@ -1602,8 +1602,8 @@ module ::DigestCampaigns
           render_to_string(template: "user_notifications/digest", formats: [:html])
         end
 
+      # No campaign key in anything the recipient can see (owner 2026-11-02): the key stays in the logs only.
       lines = []
-      lines << "Campaign: #{@campaign_key}" if @campaign_key.present?
       if has_custom_html
         # Plain-text fallback for custom HTML
         txt = custom_html_body.to_s
