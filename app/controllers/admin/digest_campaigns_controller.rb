@@ -661,6 +661,9 @@ module Admin
           NOW() AS created_at,
           NOW() AS updated_at
         FROM (#{sql}) src
+        -- random queue order: the poller sends by queue id, so without this a segment returned in groups
+        -- (e.g. one inbox provider after another) would go out as one block per group
+        ORDER BY random()
         ON CONFLICT (campaign_key, user_id)
         DO UPDATE SET
           status = CASE
