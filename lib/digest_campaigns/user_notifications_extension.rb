@@ -757,9 +757,19 @@ module ::DigestCampaigns
     # 2026-10-31: DFO Performance uses many rotating tracking domains (dapidata.com, azncrush.com, …), so also match any
     # host by the Everflow tracking-link SHAPE: exactly two upper-case codes in the path, e.g. /25MZK5TX/HW59H7N/.
     EVERFLOW_TRACKING_PATH_RE = %r{\A/[A-Z0-9]{5,10}/[A-Z0-9]{5,10}/?\z}
+    # 2026-11-17: Everflow DIRECT links (Orbio: the brand landing page itself, e.g. get-derila-ergo.com/...?vndr=evf&evf=1&offid=78&
+    # affiliate_id=1412): the page's Everflow SDK reads offid / affiliate_id / sub1..sub5 from the URL, so they get sub4 / sub5 too.
+    EVERFLOW_DIRECT_OFFID_RE = /(\A|&)offid=\d+(&|\z)/
+    EVERFLOW_DIRECT_AFFID_RE = /(\A|&)affiliate_id=\d+(&|\z)/
+
+    def self.everflow_direct_link?(uri)
+      q = uri.query.to_s
+      EVERFLOW_DIRECT_OFFID_RE.match?(q) && EVERFLOW_DIRECT_AFFID_RE.match?(q)
+    end
 
     def self.everflow_tracking_link?(uri)
-      EVERFLOW_TRACKING_HOST_RE.match?(uri.host.to_s) || EVERFLOW_TRACKING_PATH_RE.match?(uri.path.to_s)
+      EVERFLOW_TRACKING_HOST_RE.match?(uri.host.to_s) || EVERFLOW_TRACKING_PATH_RE.match?(uri.path.to_s) ||
+        everflow_direct_link?(uri)
     end
 
     def self.with_clickbank_postback_ids(uri, params, user_id, email_id)
