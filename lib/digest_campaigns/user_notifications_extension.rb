@@ -1410,6 +1410,20 @@ module ::DigestCampaigns
 
         @popular_posts = ::DigestCampaigns.fetch_random_popular_posts(3)
 
+        # 2026-11-17: newer Discourse digest templates read @localized_topic_titles / @localized_posts (digest_topic_title,
+        # digest_post_cooked) and @digest_best_posts; the stock digest sets them in prepare_digest_localizations, this
+        # topic-set path never did → "undefined method '[]' for nil" on every topic-set campaign. Same setup as core.
+        @digest_best_posts = @popular_topics.compact.to_h { |t| [t.id, t.best_post] } rescue {}
+        if respond_to?(:prepare_digest_localizations, true)
+          begin
+            prepare_digest_localizations(user, topics_for_digest)
+          rescue => e
+            Rails.logger.warn("[digest_campaigns] prepare_digest_localizations failed: #{e.class}: #{e.message}")
+          end
+        end
+        @localized_topic_titles ||= {}
+        @localized_posts ||= {}
+
         @excerpts = {}
         @popular_topics.each do |t|
           next if t&.first_post.blank?
