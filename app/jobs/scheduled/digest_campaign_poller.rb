@@ -90,7 +90,11 @@ module Jobs
                 AND c.enabled = FALSE
             )
           #{where_key_sql}
-          ORDER BY qq.id
+          -- 1.12.3 (owner 2026-11-25): claim by SCHEDULED time, not by insert order. Campaigns fill the queue at
+          -- create time (low ids, future not_before); drip rows come every 15 min (high ids) and used to wait behind
+          -- every campaign created earlier (24 Nov: 0 drip sent 18:00-00:15 Israel). NULL not_before (VSL redirects,
+          -- send-now campaigns) first; same not_before = insert order (random within a campaign since 1.12.2).
+          ORDER BY qq.not_before NULLS FIRST, qq.id
           LIMIT :limit
           FOR UPDATE SKIP LOCKED
         )
